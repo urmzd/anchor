@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (2026-10-18)
+
+### Features
+
+- **pgqueue**: Postgres DeltaLog for streaming without Redis (#4) ([3213600](https://github.com/urmzd/anchor/commit/3213600d071a947b389402420e274e86cfd9d7ea))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.2.0...v0.3.0)
+
+
 ## 0.2.0 (2026-10-18)
 
 ### .
