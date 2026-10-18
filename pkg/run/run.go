@@ -1,4 +1,4 @@
-// Package run defines duraturo's leaf types: runs, records, deltas, and the
+// Package run defines anchor's leaf types: runs, records, deltas, and the
 // sentinel errors every layer speaks. It is stdlib-only, imported by every
 // other package, and imports none of them.
 //
@@ -142,34 +142,34 @@ type Delta struct {
 // fmt.Errorf("pkg: context: %w", err) and test with errors.Is.
 var (
 	// ErrNotFound reports a run the ledger does not hold.
-	ErrNotFound = errors.New("duraturo: run not found")
+	ErrNotFound = errors.New("anchor: run not found")
 
 	// ErrSuperseded is the zombie's answer: the (RunID, Attempt) fencing
 	// pair presented is no longer current. Heartbeats, releases, settles,
 	// and delta appends from a stale attempt all receive it.
-	ErrSuperseded = errors.New("duraturo: attempt superseded")
+	ErrSuperseded = errors.New("anchor: attempt superseded")
 
 	// ErrAlreadyTerminal reports a Complete against a run that already has
 	// a terminal result. First terminal write wins; later ones are dropped.
-	ErrAlreadyTerminal = errors.New("duraturo: run already terminal")
+	ErrAlreadyTerminal = errors.New("anchor: run already terminal")
 
 	// ErrAlreadyRecorded reports a Record conflict: a record with the same
 	// (RunID, Key) exists. First write wins; the caller must adopt the
 	// stored record returned alongside this error.
-	ErrAlreadyRecorded = errors.New("duraturo: record already exists")
+	ErrAlreadyRecorded = errors.New("anchor: record already exists")
 
 	// ErrNonDeterministic reports replay divergence: a memoized record's
 	// kind or input hash does not match the live call. Terminal and
 	// non-retryable — identical code against identical records cannot
 	// succeed, so failing fast is the honest move.
-	ErrNonDeterministic = errors.New("duraturo: non-deterministic replay")
+	ErrNonDeterministic = errors.New("anchor: non-deterministic replay")
 
 	// ErrParked reports that a run reached an Event that has no record yet.
 	// The run just stops: the worker settles the queue item and the run
 	// stays pending until something writes the event record and enqueues
 	// the run again. User code propagates it like any error.
-	ErrParked = errors.New("duraturo: run parked awaiting event")
+	ErrParked = errors.New("anchor: run parked awaiting event")
 
 	// ErrMaxAttempts reports a run that exhausted its retry budget.
-	ErrMaxAttempts = errors.New("duraturo: max attempts exhausted")
+	ErrMaxAttempts = errors.New("anchor: max attempts exhausted")
 )

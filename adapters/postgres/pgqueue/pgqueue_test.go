@@ -47,7 +47,7 @@ func TestNewValidatesMapping(t *testing.T) {
 		{"mixed-case schema part", func(m *Mapping) { m.Table = "App.queue" }, "lower_snake_case"},
 		{"mixed-case column", func(m *Mapping) { m.ReadyAt = "ReadyAt" }, "lower_snake_case"},
 		{"scope column without value", func(m *Mapping) { m.Scope = Scope{Column: "source"} }, "Scope.Value is required"},
-		{"scope value without column", func(m *Mapping) { m.Scope = Scope{Value: "duraturo"} }, "Scope.Column is required"},
+		{"scope value without column", func(m *Mapping) { m.Scope = Scope{Value: "anchor"} }, "Scope.Column is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,8 +93,8 @@ func TestWithPollInterval(t *testing.T) {
 
 func TestDefaultMapping(t *testing.T) {
 	m := DefaultMapping()
-	if m.Table != "duraturo_queue" {
-		t.Fatalf("DefaultMapping table = %q, want duraturo_queue", m.Table)
+	if m.Table != "anchor_queue" {
+		t.Fatalf("DefaultMapping table = %q, want anchor_queue", m.Table)
 	}
 	if err := m.validate(); err != nil {
 		t.Fatalf("DefaultMapping does not validate: %v", err)
@@ -105,16 +105,16 @@ func TestDefaultMapping(t *testing.T) {
 }
 
 func TestRecommendedDDLGolden(t *testing.T) {
-	const want = `-- Queue table for pgqueue. Suggested only: duraturo never executes DDL.
-CREATE TABLE IF NOT EXISTS "duraturo_queue" (
+	const want = `-- Queue table for pgqueue. Suggested only: anchor never executes DDL.
+CREATE TABLE IF NOT EXISTS "anchor_queue" (
     "run_id" text NOT NULL,
     "ready_at" timestamptz,
     "lease_until" timestamptz,
     "attempt" bigint NOT NULL DEFAULT 0,
     "failures" int NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "duraturo_queue_run_id_key" ON "duraturo_queue" ("run_id");
-CREATE INDEX IF NOT EXISTS "duraturo_queue_claimable_idx" ON "duraturo_queue" ("ready_at", "lease_until");
+CREATE UNIQUE INDEX IF NOT EXISTS "anchor_queue_run_id_key" ON "anchor_queue" ("run_id");
+CREATE INDEX IF NOT EXISTS "anchor_queue_claimable_idx" ON "anchor_queue" ("ready_at", "lease_until");
 `
 	got := RecommendedDDL(DefaultMapping())
 	if got != want {
@@ -124,7 +124,7 @@ CREATE INDEX IF NOT EXISTS "duraturo_queue_claimable_idx" ON "duraturo_queue" ("
 
 func TestRecommendedDDLScoped(t *testing.T) {
 	m := DefaultMapping()
-	m.Scope = Scope{Column: "source", Value: "duraturo"}
+	m.Scope = Scope{Column: "source", Value: "anchor"}
 	got := RecommendedDDL(m)
 	if !strings.Contains(got, `"source" text NOT NULL`) {
 		t.Errorf("RecommendedDDL missing scope column in:\n%s", got)

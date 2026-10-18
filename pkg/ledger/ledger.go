@@ -2,7 +2,7 @@
 // memoized records live. Any store that can do an idempotent keyed insert, a
 // conditional pending→terminal update, and a point read qualifies — your
 // existing Postgres table, SQLite, DynamoDB, or the in-process Memory
-// implementation here. duraturo never mandates a schema: adapters map onto
+// implementation here. anchor never mandates a schema: adapters map onto
 // storage the caller already owns and validate rather than migrate.
 //
 // Durable writes per run on the happy path: exactly two run-level writes
@@ -14,10 +14,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
-// Ledger is duraturo's source of truth. Implementations must satisfy the
+// Ledger is anchor's source of truth. Implementations must satisfy the
 // conformance suite in ledgertest.
 type Ledger interface {
 	// Accept durably registers a run. Idempotent: accepting an existing

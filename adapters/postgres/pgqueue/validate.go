@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pgident"
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pginspect"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pginspect"
 )
 
 // timeTypes are the column types ReadyAt and LeaseUntil may have.
@@ -76,7 +76,7 @@ func (q *Queue) Validate(ctx context.Context) error {
 // your own migration tooling.
 func RecommendedDDL(m Mapping) string {
 	var b strings.Builder
-	b.WriteString("-- Queue table for pgqueue. Suggested only: duraturo never executes DDL.\n")
+	b.WriteString("-- Queue table for pgqueue. Suggested only: anchor never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(m.Table))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(m.RunID))
 	fmt.Fprintf(&b, "    %s timestamptz,\n", pgident.QuoteColumn(m.ReadyAt))

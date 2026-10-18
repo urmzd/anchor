@@ -14,9 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/urmzd/duraturo/adapters/postgres/pgqueue"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/queue/queuetest"
+	"github.com/urmzd/anchor/adapters/postgres/pgqueue"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/queue/queuetest"
 )
 
 // The integration harness owns all DDL: it applies pgqueue.RecommendedDDL
@@ -25,9 +25,9 @@ import (
 
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("DURATURO_POSTGRES_URL")
+	url := os.Getenv("ANCHOR_POSTGRES_URL")
 	if url == "" {
-		url = "postgres://duraturo:duraturo@localhost:5432/duraturo"
+		url = "postgres://anchor:anchor@localhost:5432/anchor"
 	}
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestQueueConformanceScoped(t *testing.T) {
 	queuetest.Run(t, func(t *testing.T) queue.Queue {
 		m := pgqueue.DefaultMapping()
 		m.Table = uniqueName("dt_queue_scoped")
-		m.Scope = pgqueue.Scope{Column: "source", Value: "duraturo"}
+		m.Scope = pgqueue.Scope{Column: "source", Value: "anchor"}
 		q := newQueue(t, pool, m)
 
 		// Another application's immediately-claimable row shares the
@@ -121,7 +121,7 @@ func TestQueueScopeLeavesAlienRowsAlone(t *testing.T) {
 
 	m := pgqueue.DefaultMapping()
 	m.Table = uniqueName("dt_queue_iso")
-	m.Scope = pgqueue.Scope{Column: "source", Value: "duraturo"}
+	m.Scope = pgqueue.Scope{Column: "source", Value: "anchor"}
 	q := newQueue(t, pool, m)
 
 	if _, err := pool.Exec(ctx, fmt.Sprintf(

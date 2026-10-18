@@ -1,6 +1,6 @@
-# duraturo
+# anchor
 
-Beta durable-execution framework for existing Go code: wrap functions with `Activity`/`Step`/`Event`, run a worker, and code survives crashes by replaying from the ledger. Go module `github.com/urmzd/duraturo`; a library, no binary.
+Beta durable-execution framework for existing Go code: wrap functions with `Activity`/`Step`/`Event`, run a worker, and code survives crashes by replaying from the ledger. Go module `github.com/urmzd/anchor`; a library, no binary.
 
 ## Architecture
 
@@ -51,11 +51,11 @@ Full guide: `docs/architecture/overview.md`. Discover layout with `tree` or ripg
 
 ## Releases
 
-sr versions the root and adapters together per `sr.yaml`, cutting one `vX.Y.Z` tag (no per-module `adapters/...` tags, so external consumers of the adapter modules resolve pseudo-versions). The adapters' `go.mod` files pin the released root version and keep `replace github.com/urmzd/duraturo => ../..` for in-repo development; downstream consumers ignore the replace and resolve the pinned require. Bump the pin when a release changes the core contracts.
+sr versions the root and adapters together per `sr.yaml`, cutting one `vX.Y.Z` tag (no per-module `adapters/...` tags, so external consumers of the adapter modules resolve pseudo-versions). The adapters' `go.mod` files pin the released root version and keep `replace github.com/urmzd/anchor => ../..` for in-repo development; downstream consumers ignore the replace and resolve the pinned require. Bump the pin when a release changes the core contracts.
 
 ## Extension Guide
 
 - **New ledger backend**: implement the five `ledger.Ledger` methods (`Accept`, `Complete`, `Load`, `Record`, and the cursor-paginated `ListPending(ctx, before time.Time, cursor run.PendingCursor, limit int)`) in its own module under `adapters/`, and pass `ledgertest.Run`. Also implement the optional `ledger.RunGetter` capability (`GetRun`, a point read without records) so `Handle.Result` polling avoids `Load`'s full record prefetch.
 - **New queue backend**: implement `queue.Queue` and pass `queuetest.Run`. Claims return `queue.Item{RunID, Attempt, Failures}`: increment Attempt on every claim, increment Failures only on `Release(ctx, it, delay, failed=true)` and on expiry reclaims, never on Settle-and-re-enqueue. Optionally add the `queue.DeltaLog` capability (exercised by `queuetest.RunDeltaLog`, plus the fenced-append subtest that `Run` adds for backends implementing both).
-- **Custom codec**: implement `run.Codec` (`Marshal`/`Unmarshal`/`ContentType`); install with `duraturo.WithCodec` on the client and `worker.WithCodec` on the worker. They must agree: each record stores the `ContentType()` that produced it, and replay verifies it on every memo hit, failing the run terminally on a mismatch.
+- **Custom codec**: implement `run.Codec` (`Marshal`/`Unmarshal`/`ContentType`); install with `anchor.WithCodec` on the client and `worker.WithCodec` on the worker. They must agree: each record stores the `ContentType()` that produced it, and replay verifies it on every memo hit, failing the run terminally on a mismatch.
 - **Forking, child runs, timers**: these land as client-side compositions, not engine features. `run.Run.ParentRunID` and record-key namespaces are the reserved seams; do not add framework surface for them ahead of that design.

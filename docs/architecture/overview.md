@@ -1,6 +1,6 @@
 # Architecture Overview
 
-duraturo makes existing Go code durable without rewrites. Users wrap functions, run a worker, and their code survives crashes: on retry the workflow re-executes from the top, recorded calls return instantly from the ledger, and the first unrecorded call executes for real. This document describes the beta architecture; interfaces are stabilizing but pre-1.0.
+anchor makes existing Go code durable without rewrites. Users wrap functions, run a worker, and their code survives crashes: on retry the workflow re-executes from the top, recorded calls return instantly from the ledger, and the first unrecorded call executes for real. This document describes the beta architecture; interfaces are stabilizing but pre-1.0.
 
 ## Three Concepts
 
@@ -18,7 +18,7 @@ The packages form a strict one-way DAG:
 - `pkg/ledger` and `pkg/queue` define the two interfaces, each with a complete single-process `Memory` implementation (the queue's also implements `DeltaLog`). Their conformance suites, `pkg/ledger/ledgertest` and `pkg/queue/queuetest`, are the executable contracts every backend must pass.
 - `pkg/replay` is the correctness heart: the `Frame` that memoizes re-execution (see `docs/design/replay.md`).
 - `pkg/worker` is the consumer loop over ledger, queue, and replay.
-- The root package (`duraturo`) is the user-facing SDK: `Activity`, `Step`, `Event`, `Emit`, `Client`, `Start`/`Exec`. It imports only the `pkg/*` interfaces and replay, never `pkg/worker` and never an adapter.
+- The root package (`anchor`) is the user-facing SDK: `Activity`, `Step`, `Event`, `Emit`, `Client`, `Start`/`Exec`. It imports only the `pkg/*` interfaces and replay, never `pkg/worker` and never an adapter.
 - Generics stop at the root: `ActivityFn[I, O]` compiles down to a type-erased `run.WorkflowFn` (bytes in, bytes out) in `run.Registry`, so `pkg/worker` never sees a type parameter.
 
 Nothing under `pkg/` imports the root package, and adapters are invisible to all of it.
@@ -27,13 +27,13 @@ Nothing under `pkg/` imports the root package, and adapters are invisible to all
 
 Every `go.mod` in the tree is its own module:
 
-- root (`github.com/urmzd/duraturo`): the SDK and `pkg/*`, zero third-party dependencies.
+- root (`github.com/urmzd/anchor`): the SDK and `pkg/*`, zero third-party dependencies.
 - `adapters/postgres` (pgx) and `adapters/redis` (go-redis): separate modules so their dependencies never touch the root. They are imported only by user code and `examples/`.
 - `examples/*`: separate modules wiring root + adapters together; the only code in the repo that imports adapters.
 
 ## The Two Adapters
 
-**adapters/postgres** maps the ledger onto existing user tables via a declarative mapping (`pgledger`). `Validate` introspects the live schema and errors with guidance when a column is missing or mistyped; `RecommendedDDL` returns suggested DDL as a string and never executes it. Adapters validate, never migrate: duraturo runs no DDL, ever. Two contract details: mapped identifiers are lower_snake_case only, and the uniqueness the ledger depends on (the runs table's run-ID column, the records table's run-ID and key pair) must be a plain unique constraint or unique index: non-partial, non-expression, non-deferrable. Partial and expression unique indexes are not accepted, because the adapter's `ON CONFLICT` inference cannot use them; `Validate` rejects them rather than letting first-write-wins silently degrade. The same module ships `pgqueue`, a Postgres queue built on `FOR UPDATE SKIP LOCKED`, so a Postgres-only deployment (ledger and queue in one database) is fully supported.
+**adapters/postgres** maps the ledger onto existing user tables via a declarative mapping (`pgledger`). `Validate` introspects the live schema and errors with guidance when a column is missing or mistyped; `RecommendedDDL` returns suggested DDL as a string and never executes it. Adapters validate, never migrate: anchor runs no DDL, ever. Two contract details: mapped identifiers are lower_snake_case only, and the uniqueness the ledger depends on (the runs table's run-ID column, the records table's run-ID and key pair) must be a plain unique constraint or unique index: non-partial, non-expression, non-deferrable. Partial and expression unique indexes are not accepted, because the adapter's `ON CONFLICT` inference cannot use them; `Validate` rejects them rather than letting first-write-wins silently degrade. The same module ships `pgqueue`, a Postgres queue built on `FOR UPDATE SKIP LOCKED`, so a Postgres-only deployment (ledger and queue in one database) is fully supported.
 
 **adapters/redis** (`redisqueue`) is a throughput upgrade, not a requirement: a sorted-set lease queue (ready and leased ZSETs plus counter hashes, every mutation one atomic Lua script) implementing `queue.Queue`, plus the `DeltaLog` capability on Redis Streams. All keys share one cluster slot via a hash tag on the namespace, so the namespace must be non-empty and must contain no braces; the constructor rejects anything else, because a malformed hash tag would silently split a namespace's keys across cluster slots and break the atomic scripts. Redis is disposable by design: wiping it loses delta history and at most one lease of delivery latency, never runs or results; the janitor rebuilds the queue from `ListPending`, paginating the entire pending set.
 

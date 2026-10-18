@@ -1,9 +1,9 @@
-package duraturo
+package anchor
 
 import (
 	"fmt"
 
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // NonRetryable marks an error terminal: the failure is recorded (memoized)
@@ -22,7 +22,7 @@ type DecodeError struct {
 }
 
 func (e *DecodeError) Error() string {
-	return fmt.Sprintf("duraturo: decode %q: %v", e.Name, e.Err)
+	return fmt.Sprintf("anchor: decode %q: %v", e.Name, e.Err)
 }
 
 func (e *DecodeError) Unwrap() error { return e.Err }
@@ -35,5 +35,5 @@ type RunFailedError struct {
 }
 
 func (e *RunFailedError) Error() string {
-	return fmt.Sprintf("duraturo: run %s failed: %s", e.RunID, e.Message)
+	return fmt.Sprintf("anchor: run %s failed: %s", e.RunID, e.Message)
 }

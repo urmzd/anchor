@@ -1,4 +1,4 @@
-// Package worker implements duraturo's consumer: the loop that claims runs
+// Package worker implements anchor's consumer: the loop that claims runs
 // from the queue, re-executes them under replay to their frontier, and
 // persists exactly one outcome per claim. The worker is a loop, not a
 // service — it exposes no listener and accepts no inbound calls. Every arrow
@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/replay"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/replay"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 const (
@@ -201,7 +201,7 @@ func (w *Worker) claimLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			w.opts.logger.Warn("duraturo/worker: claim failed", "error", err)
+			w.opts.logger.Warn("anchor/worker: claim failed", "error", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -229,7 +229,7 @@ func (w *Worker) process(ctx context.Context, it queue.Item) {
 	switch {
 	case errors.Is(err, run.ErrNotFound):
 		// Queue entry without a ledger row: flow without truth is noise.
-		w.opts.logger.Warn("duraturo/worker: claimed run has no ledger row; settling",
+		w.opts.logger.Warn("anchor/worker: claimed run has no ledger row; settling",
 			"run_id", it.RunID, "attempt", it.Attempt)
 		w.settle(outCtx, it)
 		return
@@ -240,7 +240,7 @@ func (w *Worker) process(ctx context.Context, it queue.Item) {
 			w.release(outCtx, it, 0, false)
 			return
 		}
-		w.opts.logger.Warn("duraturo/worker: load failed; releasing",
+		w.opts.logger.Warn("anchor/worker: load failed; releasing",
 			"run_id", it.RunID, "attempt", it.Attempt, "error", err)
 		w.release(outCtx, it, w.opts.backoff(it.Failures+1), true)
 		return
@@ -286,7 +286,7 @@ func (w *Worker) process(ctx context.Context, it queue.Item) {
 	if w.deltas != nil {
 		divider := run.Delta{RunID: it.RunID, Attempt: it.Attempt, Kind: run.DeltaAttempt}
 		if aerr := w.deltas.Append(ctx, divider); aerr != nil {
-			w.opts.logger.Warn("duraturo/worker: attempt divider append failed",
+			w.opts.logger.Warn("anchor/worker: attempt divider append failed",
 				"run_id", it.RunID, "attempt", it.Attempt, "error", aerr)
 		}
 	}
@@ -313,7 +313,7 @@ func (w *Worker) process(ctx context.Context, it queue.Item) {
 		w.complete(outCtx, it, run.Result{Status: run.StatusSucceeded, Output: out})
 		w.settle(outCtx, it)
 		if keys := frame.Unconsumed(); len(keys) > 0 {
-			w.opts.logger.Warn("duraturo/worker: unconsumed records (calls removed by a code change?); result stands",
+			w.opts.logger.Warn("anchor/worker: unconsumed records (calls removed by a code change?); result stands",
 				"run_id", it.RunID, "keys", keys)
 		}
 	case errors.Is(err, run.ErrParked):
@@ -360,7 +360,7 @@ func (w *Worker) heartbeat(ctx context.Context, cancel context.CancelFunc, it qu
 				cancel()
 				return
 			}
-			w.opts.logger.Warn("duraturo/worker: heartbeat failed; will retry",
+			w.opts.logger.Warn("anchor/worker: heartbeat failed; will retry",
 				"run_id", it.RunID, "attempt", it.Attempt, "error", err)
 		}
 	}
@@ -387,14 +387,14 @@ func (w *Worker) janitor(ctx context.Context) {
 		for {
 			batch, err := w.lgr.ListPending(ctx, before, cursor, janitorBatch)
 			if err != nil {
-				w.opts.logger.Warn("duraturo/worker: janitor list pending failed", "error", err)
+				w.opts.logger.Warn("anchor/worker: janitor list pending failed", "error", err)
 				break
 			}
 			for _, p := range batch {
 				// Enqueue is a no-op for queued and leased runs, so
 				// sweeping the whole pending set is harmless.
 				if qerr := w.q.Enqueue(ctx, p.ID, 0); qerr != nil {
-					w.opts.logger.Warn("duraturo/worker: janitor enqueue failed",
+					w.opts.logger.Warn("anchor/worker: janitor enqueue failed",
 						"run_id", p.ID, "error", qerr)
 				}
 			}
@@ -412,7 +412,7 @@ func (w *Worker) janitor(ctx context.Context) {
 func (w *Worker) complete(ctx context.Context, it queue.Item, res run.Result) {
 	err := w.lgr.Complete(ctx, it.RunID, it.Attempt, res)
 	if err != nil && !errors.Is(err, run.ErrAlreadyTerminal) {
-		w.opts.logger.Warn("duraturo/worker: complete failed; janitor will re-drive the run",
+		w.opts.logger.Warn("anchor/worker: complete failed; janitor will re-drive the run",
 			"run_id", it.RunID, "attempt", it.Attempt, "error", err)
 	}
 }
@@ -425,7 +425,7 @@ func (w *Worker) completeFailed(ctx context.Context, it queue.Item, msg string) 
 // lapsed, the successor attempt owns the queue state now.
 func (w *Worker) settle(ctx context.Context, it queue.Item) {
 	if err := w.q.Settle(ctx, it); err != nil && !errors.Is(err, run.ErrSuperseded) {
-		w.opts.logger.Warn("duraturo/worker: settle failed",
+		w.opts.logger.Warn("anchor/worker: settle failed",
 			"run_id", it.RunID, "attempt", it.Attempt, "error", err)
 	}
 }
@@ -434,7 +434,7 @@ func (w *Worker) settle(ctx context.Context, it queue.Item) {
 // failed says whether this execution consumes retry budget.
 func (w *Worker) release(ctx context.Context, it queue.Item, delay time.Duration, failed bool) {
 	if err := w.q.Release(ctx, it, delay, failed); err != nil && !errors.Is(err, run.ErrSuperseded) {
-		w.opts.logger.Warn("duraturo/worker: release failed",
+		w.opts.logger.Warn("anchor/worker: release failed",
 			"run_id", it.RunID, "attempt", it.Attempt, "error", err)
 	}
 }

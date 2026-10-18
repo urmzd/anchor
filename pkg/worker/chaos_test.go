@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
-	"github.com/urmzd/duraturo/pkg/worker"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
+	"github.com/urmzd/anchor/pkg/worker"
 )
 
 // TestReplay_CompletedPrefixNeverReruns kills a worker between the second
@@ -32,15 +32,15 @@ func TestReplay_CompletedPrefixNeverReruns(t *testing.T) {
 	var cFirst atomic.Bool
 	cFirst.Store(true)
 
-	actA := duraturo.ActivityIn(reg, "a", func(_ context.Context, n int) (int, error) {
+	actA := anchor.ActivityIn(reg, "a", func(_ context.Context, n int) (int, error) {
 		aN.Add(1)
 		return n + 1, nil
 	})
-	actB := duraturo.ActivityIn(reg, "b", func(_ context.Context, n int) (int, error) {
+	actB := anchor.ActivityIn(reg, "b", func(_ context.Context, n int) (int, error) {
 		bN.Add(1)
 		return n * 2, nil
 	})
-	actC := duraturo.ActivityIn(reg, "c", func(ctx context.Context, n int) (int, error) {
+	actC := anchor.ActivityIn(reg, "c", func(ctx context.Context, n int) (int, error) {
 		cN.Add(1)
 		if cFirst.CompareAndSwap(true, false) {
 			select {
@@ -51,7 +51,7 @@ func TestReplay_CompletedPrefixNeverReruns(t *testing.T) {
 		}
 		return n + 3, nil
 	})
-	wf := duraturo.ActivityIn(reg, "pipeline", func(ctx context.Context, n int) (int, error) {
+	wf := anchor.ActivityIn(reg, "pipeline", func(ctx context.Context, n int) (int, error) {
 		a, err := actA.Call(ctx, n)
 		if err != nil {
 			return 0, err
@@ -64,8 +64,8 @@ func TestReplay_CompletedPrefixNeverReruns(t *testing.T) {
 	})
 
 	w1 := startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, 4)
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, 4)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -106,7 +106,7 @@ type chaosOut struct {
 
 // TestChaos_RandomKills kills worker 1 at a seed-derived instant somewhere
 // in a 4-activity+step run, lets worker 2 finish, and asserts the invariants
-// that make duraturo duraturo: exact output, exactly one record per key, at
+// that make anchor anchor: exact output, exactly one record per key, at
 // most one duplicate execution per activity, and a step value consistent
 // with its single record.
 func TestChaos_RandomKills(t *testing.T) {
@@ -124,8 +124,8 @@ func TestChaos_RandomKills(t *testing.T) {
 			var counts [4]atomic.Int64
 			var stepSrc atomic.Int64
 
-			mk := func(i int, name string, f func(int) int) *duraturo.ActivityFn[int, int] {
-				return duraturo.ActivityIn(reg, name, func(ctx context.Context, n int) (int, error) {
+			mk := func(i int, name string, f func(int) int) *anchor.ActivityFn[int, int] {
+				return anchor.ActivityIn(reg, name, func(ctx context.Context, n int) (int, error) {
 					counts[i].Add(1)
 					select {
 					case <-time.After(2 * time.Millisecond):
@@ -140,7 +140,7 @@ func TestChaos_RandomKills(t *testing.T) {
 			a3 := mk(2, "a3", func(n int) int { return n * 3 })
 			a4 := mk(3, "a4", func(n int) int { return n - 5 })
 
-			wf := duraturo.ActivityIn(reg, "chaos", func(ctx context.Context, n int) (chaosOut, error) {
+			wf := anchor.ActivityIn(reg, "chaos", func(ctx context.Context, n int) (chaosOut, error) {
 				x, err := a1.Call(ctx, n)
 				if err != nil {
 					return chaosOut{}, err
@@ -154,7 +154,7 @@ func TestChaos_RandomKills(t *testing.T) {
 				if x, err = a4.Call(ctx, x); err != nil {
 					return chaosOut{}, err
 				}
-				s, err := duraturo.Step(ctx, "pick", func(context.Context) (int, error) {
+				s, err := anchor.Step(ctx, "pick", func(context.Context) (int, error) {
 					return int(stepSrc.Add(1)) * 1000, nil
 				})
 				if err != nil {
@@ -168,9 +168,9 @@ func TestChaos_RandomKills(t *testing.T) {
 				worker.WithHeartbeatEvery(10 * time.Millisecond),
 			}
 			w1 := startWorker(t, testWorker(lgr, q, reg, chaosOpts...))
-			c := duraturo.New(lgr, q)
+			c := anchor.New(lgr, q)
 			input := seed % 17
-			h, err := duraturo.Start(context.Background(), c, wf, input)
+			h, err := anchor.Start(context.Background(), c, wf, input)
 			if err != nil {
 				t.Fatalf("start: %v", err)
 			}
@@ -239,15 +239,15 @@ func TestDeltas_DividerSplit(t *testing.T) {
 	var streamFirst atomic.Bool
 	streamFirst.Store(true)
 
-	before := duraturo.ActivityIn(reg, "before", func(ctx context.Context, s string) (string, error) {
-		if err := duraturo.Emit(ctx, "prelude"); err != nil {
+	before := anchor.ActivityIn(reg, "before", func(ctx context.Context, s string) (string, error) {
+		if err := anchor.Emit(ctx, "prelude"); err != nil {
 			return "", err
 		}
 		return s + "!", nil
 	})
-	stream := duraturo.ActivityIn(reg, "stream", func(ctx context.Context, s string) (string, error) {
+	stream := anchor.ActivityIn(reg, "stream", func(ctx context.Context, s string) (string, error) {
 		for i := range 3 {
-			if err := duraturo.Emit(ctx, fmt.Sprintf("chunk-%d", i)); err != nil {
+			if err := anchor.Emit(ctx, fmt.Sprintf("chunk-%d", i)); err != nil {
 				return "", err
 			}
 		}
@@ -260,7 +260,7 @@ func TestDeltas_DividerSplit(t *testing.T) {
 		}
 		return s + "$", nil
 	})
-	wf := duraturo.ActivityIn(reg, "streaming", func(ctx context.Context, s string) (string, error) {
+	wf := anchor.ActivityIn(reg, "streaming", func(ctx context.Context, s string) (string, error) {
 		b, err := before.Call(ctx, s)
 		if err != nil {
 			return "", err
@@ -269,8 +269,8 @@ func TestDeltas_DividerSplit(t *testing.T) {
 	})
 
 	w1 := startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "in")
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "in")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -404,13 +404,13 @@ func TestRollingForward(t *testing.T) {
 		}
 
 		regV1 := run.NewRegistry()
-		aV1 := duraturo.ActivityIn(regV1, "a", aFn)
-		wfV1 := duraturo.ActivityIn(regV1, "roll", func(ctx context.Context, in string) (string, error) {
+		aV1 := anchor.ActivityIn(regV1, "a", aFn)
+		wfV1 := anchor.ActivityIn(regV1, "roll", func(ctx context.Context, in string) (string, error) {
 			av, err := aV1.Call(ctx, in)
 			if err != nil {
 				return "", err
 			}
-			ev, err := duraturo.Event[string](ctx, "go")
+			ev, err := anchor.Event[string](ctx, "go")
 			if err != nil {
 				return "", err
 			}
@@ -418,8 +418,8 @@ func TestRollingForward(t *testing.T) {
 		})
 
 		w1 := startWorker(t, testWorker(lgr, q, regV1))
-		c := duraturo.New(lgr, q)
-		h, err := duraturo.Start(context.Background(), c, wfV1, "in", duraturo.WithMaxAttempts(1000))
+		c := anchor.New(lgr, q)
+		h, err := anchor.Start(context.Background(), c, wfV1, "in", anchor.WithMaxAttempts(1000))
 		if err != nil {
 			t.Fatalf("start: %v", err)
 		}
@@ -428,9 +428,9 @@ func TestRollingForward(t *testing.T) {
 
 		// v2 of the SAME workflow name inserts "c" before the event.
 		regV2 := run.NewRegistry()
-		aV2 := duraturo.ActivityIn(regV2, "a", aFn)
-		cV2 := duraturo.ActivityIn(regV2, "c", cFn)
-		duraturo.ActivityIn(regV2, "roll", func(ctx context.Context, in string) (string, error) {
+		aV2 := anchor.ActivityIn(regV2, "a", aFn)
+		cV2 := anchor.ActivityIn(regV2, "c", cFn)
+		anchor.ActivityIn(regV2, "roll", func(ctx context.Context, in string) (string, error) {
 			av, err := aV2.Call(ctx, in)
 			if err != nil {
 				return "", err
@@ -439,7 +439,7 @@ func TestRollingForward(t *testing.T) {
 			if err != nil {
 				return "", err
 			}
-			ev, err := duraturo.Event[string](ctx, "go")
+			ev, err := anchor.Event[string](ctx, "go")
 			if err != nil {
 				return "", err
 			}
@@ -472,16 +472,16 @@ func TestRollingForward(t *testing.T) {
 		reg := run.NewRegistry()
 
 		var aN atomic.Int64
-		aAct := duraturo.ActivityIn(reg, "a", func(_ context.Context, s string) (string, error) {
+		aAct := anchor.ActivityIn(reg, "a", func(_ context.Context, s string) (string, error) {
 			aN.Add(1)
 			return "A(" + s + ")", nil
 		})
-		wf := duraturo.ActivityIn(reg, "shrunk", func(ctx context.Context, in string) (string, error) {
+		wf := anchor.ActivityIn(reg, "shrunk", func(ctx context.Context, in string) (string, error) {
 			return aAct.Call(ctx, in)
 		})
 
-		c := duraturo.New(lgr, q)
-		h, err := duraturo.Start(context.Background(), c, wf, "in")
+		c := anchor.New(lgr, q)
+		h, err := anchor.Start(context.Background(), c, wf, "in")
 		if err != nil {
 			t.Fatalf("start: %v", err)
 		}
@@ -515,16 +515,16 @@ func TestRollingForward(t *testing.T) {
 		reg := run.NewRegistry()
 
 		var aN atomic.Int64
-		aAct := duraturo.ActivityIn(reg, "a", func(_ context.Context, s string) (string, error) {
+		aAct := anchor.ActivityIn(reg, "a", func(_ context.Context, s string) (string, error) {
 			aN.Add(1)
 			return s, nil
 		})
-		wf := duraturo.ActivityIn(reg, "diverge", func(ctx context.Context, _ string) (string, error) {
+		wf := anchor.ActivityIn(reg, "diverge", func(ctx context.Context, _ string) (string, error) {
 			return aAct.Call(ctx, "live-input")
 		})
 
-		c := duraturo.New(lgr, q)
-		h, err := duraturo.Start(context.Background(), c, wf, "x", duraturo.WithMaxAttempts(5))
+		c := anchor.New(lgr, q)
+		h, err := anchor.Start(context.Background(), c, wf, "x", anchor.WithMaxAttempts(5))
 		if err != nil {
 			t.Fatalf("start: %v", err)
 		}
@@ -543,7 +543,7 @@ func TestRollingForward(t *testing.T) {
 
 		startWorker(t, testWorker(lgr, q, reg))
 		_, err = h.Result(resultCtx(t))
-		var rfe *duraturo.RunFailedError
+		var rfe *anchor.RunFailedError
 		if !errors.As(err, &rfe) {
 			t.Fatalf("result error = %v, want *RunFailedError", err)
 		}

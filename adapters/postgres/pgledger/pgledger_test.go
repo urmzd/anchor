@@ -50,7 +50,7 @@ func TestNewValidatesMapping(t *testing.T) {
 		{"mixed-case column", func(m *Mapping) { m.Records.Key = "RecordKey" }, "lower_snake_case"},
 		{"deeply qualified table", func(m *Mapping) { m.Runs.Table = "a.b.c" }, "more than one dot"},
 		{"scope column without value", func(m *Mapping) { m.Runs.Scope = Scope{Column: "source"} }, "Scope.Value is required"},
-		{"scope value without column", func(m *Mapping) { m.Records.Scope = Scope{Value: "duraturo"} }, "Scope.Column is required"},
+		{"scope value without column", func(m *Mapping) { m.Records.Scope = Scope{Value: "anchor"} }, "Scope.Column is required"},
 		{"unsafe scope column", func(m *Mapping) { m.Runs.Scope = Scope{Column: "so urce", Value: "x"} }, "unsafe identifier"},
 	}
 	for _, tt := range tests {
@@ -77,10 +77,10 @@ func TestNewAcceptsValidMappings(t *testing.T) {
 	}
 
 	m = DefaultMapping()
-	m.Runs.Table = "app.duraturo_runs" // schema-qualified
-	m.Runs.CreatedAt = ""              // optional column unmapped
-	m.Runs.Scope = Scope{Column: "source", Value: "duraturo"}
-	m.Records.Scope = Scope{Column: "source", Value: "duraturo"}
+	m.Runs.Table = "app.anchor_runs" // schema-qualified
+	m.Runs.CreatedAt = ""            // optional column unmapped
+	m.Runs.Scope = Scope{Column: "source", Value: "anchor"}
+	m.Records.Scope = Scope{Column: "source", Value: "anchor"}
 	if _, err := New(pool, m); err != nil {
 		t.Fatalf("New(scoped, qualified, no CreatedAt) = %v, want nil", err)
 	}
@@ -88,8 +88,8 @@ func TestNewAcceptsValidMappings(t *testing.T) {
 
 func TestDefaultMapping(t *testing.T) {
 	m := DefaultMapping()
-	if m.Runs.Table != "duraturo_runs" || m.Records.Table != "duraturo_records" {
-		t.Fatalf("DefaultMapping tables = %q / %q, want duraturo_runs / duraturo_records",
+	if m.Runs.Table != "anchor_runs" || m.Records.Table != "anchor_records" {
+		t.Fatalf("DefaultMapping tables = %q / %q, want anchor_runs / anchor_records",
 			m.Runs.Table, m.Records.Table)
 	}
 	if err := m.validate(); err != nil {
@@ -104,23 +104,23 @@ func TestDefaultMapping(t *testing.T) {
 }
 
 func TestRecommendedDDLGolden(t *testing.T) {
-	const want = `-- Runs table for pgledger. Suggested only: duraturo never executes DDL.
-CREATE TABLE IF NOT EXISTS "duraturo_runs" (
+	const want = `-- Runs table for pgledger. Suggested only: anchor never executes DDL.
+CREATE TABLE IF NOT EXISTS "anchor_runs" (
     "run_id" text NOT NULL,
     "status" text NOT NULL,
     "envelope" jsonb NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "duraturo_runs_run_id_key" ON "duraturo_runs" ("run_id");
-CREATE INDEX IF NOT EXISTS "duraturo_runs_pending_idx" ON "duraturo_runs" ("status", "created_at");
+CREATE UNIQUE INDEX IF NOT EXISTS "anchor_runs_run_id_key" ON "anchor_runs" ("run_id");
+CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status", "created_at");
 
--- Records table for pgledger. Suggested only: duraturo never executes DDL.
-CREATE TABLE IF NOT EXISTS "duraturo_records" (
+-- Records table for pgledger. Suggested only: anchor never executes DDL.
+CREATE TABLE IF NOT EXISTS "anchor_records" (
     "run_id" text NOT NULL,
     "record_key" text NOT NULL,
     "envelope" jsonb NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "duraturo_records_run_id_record_key_key" ON "duraturo_records" ("run_id", "record_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "anchor_records_run_id_record_key_key" ON "anchor_records" ("run_id", "record_key");
 `
 	got := RecommendedDDL(DefaultMapping())
 	if got != want {
@@ -131,13 +131,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "duraturo_records_run_id_record_key_key" ON "d
 func TestRecommendedDDLScoped(t *testing.T) {
 	m := DefaultMapping()
 	m.Runs.CreatedAt = ""
-	m.Runs.Scope = Scope{Column: "source", Value: "duraturo"}
-	m.Records.Scope = Scope{Column: "source", Value: "duraturo"}
+	m.Runs.Scope = Scope{Column: "source", Value: "anchor"}
+	m.Records.Scope = Scope{Column: "source", Value: "anchor"}
 	got := RecommendedDDL(m)
 
 	for _, sub := range []string{
 		`"source" text NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS "duraturo_runs_pending_idx" ON "duraturo_runs" ("status");`,
+		`CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status");`,
 	} {
 		if !strings.Contains(got, sub) {
 			t.Errorf("RecommendedDDL missing %q in:\n%s", sub, got)

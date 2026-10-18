@@ -1,11 +1,11 @@
-package duraturo
+package anchor
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/urmzd/duraturo/pkg/replay"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/replay"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Event is wait-as-absence: it returns the named event record's payload if
@@ -26,7 +26,7 @@ func Event[O any](ctx context.Context, name string) (O, error) {
 	var zero O
 	f, ok := replay.FromContext(ctx)
 	if !ok {
-		return zero, fmt.Errorf("duraturo: Event %q outside a run has no event source", name)
+		return zero, fmt.Errorf("anchor: Event %q outside a run has no event source", name)
 	}
 	outB, err := f.Do(ctx, run.KindEvent, name, "", nil, nil)
 	if err != nil {
@@ -50,7 +50,7 @@ func Emit(ctx context.Context, payload any) error {
 	}
 	b, err := f.Codec().Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("duraturo: marshal delta: %w", err)
+		return fmt.Errorf("anchor: marshal delta: %w", err)
 	}
 	return f.Emit(ctx, b)
 }

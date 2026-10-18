@@ -1,4 +1,4 @@
-// Package redisqueue is duraturo's Redis queue backend: a sorted-set lease
+// Package redisqueue is anchor's Redis queue backend: a sorted-set lease
 // queue implementing queue.Queue, plus the queue.DeltaLog capability on
 // Redis Streams.
 //
@@ -47,7 +47,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/urmzd/duraturo/pkg/queue"
+	"github.com/urmzd/anchor/pkg/queue"
 )
 
 // defaultPollInterval is the Claim/Watch poll cadence when no option is set.

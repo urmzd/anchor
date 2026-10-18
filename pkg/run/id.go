@@ -15,7 +15,7 @@ func NewID() string {
 	var b [16]byte
 	binary.BigEndian.PutUint64(b[:8], uint64(time.Now().UnixMilli())<<16)
 	if _, err := rand.Read(b[6:]); err != nil {
-		panic("duraturo: crypto/rand unavailable: " + err.Error())
+		panic("anchor: crypto/rand unavailable: " + err.Error())
 	}
 	b[6] = (b[6] & 0x0f) | 0x70 // version 7
 	b[8] = (b[8] & 0x3f) | 0x80 // variant

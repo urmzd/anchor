@@ -1,17 +1,17 @@
-package duraturo
+package anchor
 
 import (
 	"context"
 
-	"github.com/urmzd/duraturo/pkg/replay"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/replay"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Step records inline non-determinism: time, random values, generated IDs,
 // one-off reads. Inside a run it executes once ever — the first recorded
 // value is the value forever. Outside a run it just runs fn.
 //
-//	at, err := duraturo.Step(ctx, "completed-at",
+//	at, err := anchor.Step(ctx, "completed-at",
 //	    func(context.Context) (time.Time, error) { return time.Now(), nil })
 //
 // Give distinct names to steps whose program order may vary: steps carry no

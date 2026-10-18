@@ -1,4 +1,4 @@
-// Package replay is duraturo's correctness heart: the memoized re-execution
+// Package replay is anchor's correctness heart: the memoized re-execution
 // of a run. A worker builds one Frame per claim from the run's ledger
 // records; every wrapped call in user code bottoms out in Frame.Do, which
 // either returns a recorded result instantly (replay) or executes for real
@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Frame is the replay state of one claimed attempt. It is built once per

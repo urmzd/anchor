@@ -1,9 +1,9 @@
-package duraturo
+package anchor
 
 import (
 	"context"
 
-	"github.com/urmzd/duraturo/pkg/replay"
+	"github.com/urmzd/anchor/pkg/replay"
 )
 
 // RunInfo identifies the run a context is executing under.
@@ -29,7 +29,7 @@ func InRun(ctx context.Context) bool {
 
 // IdempotencyKey returns "{runID}:{recordKey}" for the activity currently
 // executing — a stable key to hand downstream systems (payment providers,
-// mail APIs) so duraturo's at-least-once side effects become effective-once
+// mail APIs) so anchor's at-least-once side effects become effective-once
 // where the callee deduplicates. Empty outside a wrapped call.
 func IdempotencyKey(ctx context.Context) string {
 	f, ok := replay.FromContext(ctx)

@@ -43,5 +43,5 @@ type RecordedError struct {
 }
 
 func (e *RecordedError) Error() string {
-	return fmt.Sprintf("duraturo: %s (%s): %s", e.Name, e.Key, e.Message)
+	return fmt.Sprintf("anchor: %s (%s): %s", e.Name, e.Key, e.Message)
 }

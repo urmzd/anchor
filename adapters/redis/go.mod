@@ -1,10 +1,10 @@
-module github.com/urmzd/duraturo/adapters/redis
+module github.com/urmzd/anchor/adapters/redis
 
 go 1.26.4
 
 require (
 	github.com/redis/go-redis/v9 v9.21.0
-	github.com/urmzd/duraturo v0.1.0
+	github.com/urmzd/anchor v0.2.0
 )
 
 require (
@@ -12,4 +12,4 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 )
 
-replace github.com/urmzd/duraturo => ../..
+replace github.com/urmzd/anchor => ../..

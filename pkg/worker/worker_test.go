@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
-	"github.com/urmzd/duraturo/pkg/worker"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
+	"github.com/urmzd/anchor/pkg/worker"
 )
 
 // workerHandle owns one running worker's lifecycle.
@@ -135,19 +135,19 @@ func TestWorker_HappyPath(t *testing.T) {
 	reg := run.NewRegistry()
 
 	var reserveN, chargeN, notifyN atomic.Int64
-	reserve := duraturo.ActivityIn(reg, "reserve", func(_ context.Context, n int) (int, error) {
+	reserve := anchor.ActivityIn(reg, "reserve", func(_ context.Context, n int) (int, error) {
 		reserveN.Add(1)
 		return n + 10, nil
 	})
-	charge := duraturo.ActivityIn(reg, "charge", func(_ context.Context, n int) (int, error) {
+	charge := anchor.ActivityIn(reg, "charge", func(_ context.Context, n int) (int, error) {
 		chargeN.Add(1)
 		return n * 2, nil
 	})
-	notify := duraturo.ActivityIn(reg, "notify", func(_ context.Context, n int) (int, error) {
+	notify := anchor.ActivityIn(reg, "notify", func(_ context.Context, n int) (int, error) {
 		notifyN.Add(1)
 		return n - 3, nil
 	})
-	wf := duraturo.ActivityIn(reg, "order", func(ctx context.Context, n int) (int, error) {
+	wf := anchor.ActivityIn(reg, "order", func(ctx context.Context, n int) (int, error) {
 		a, err := reserve.Call(ctx, n)
 		if err != nil {
 			return 0, err
@@ -160,8 +160,8 @@ func TestWorker_HappyPath(t *testing.T) {
 	})
 
 	startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, 5)
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, 5)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -184,20 +184,20 @@ func TestWorker_UnknownWorkflow(t *testing.T) {
 	q := queue.NewMemory()
 
 	clientReg := run.NewRegistry()
-	wf := duraturo.ActivityIn(clientReg, "ghost", func(_ context.Context, s string) (string, error) {
+	wf := anchor.ActivityIn(clientReg, "ghost", func(_ context.Context, s string) (string, error) {
 		return s, nil
 	})
 
 	// The worker's registry has never heard of "ghost".
 	startWorker(t, testWorker(lgr, q, run.NewRegistry()))
 
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "in", duraturo.WithMaxAttempts(2))
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "in", anchor.WithMaxAttempts(2))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	_, err = h.Result(resultCtx(t))
-	var rfe *duraturo.RunFailedError
+	var rfe *anchor.RunFailedError
 	if !errors.As(err, &rfe) {
 		t.Fatalf("result error = %v, want *RunFailedError", err)
 	}
@@ -213,19 +213,19 @@ func TestWorker_RetryableBurnsAttempts(t *testing.T) {
 	reg := run.NewRegistry()
 
 	var execs atomic.Int64
-	wf := duraturo.ActivityIn(reg, "flaky", func(_ context.Context, s string) (string, error) {
+	wf := anchor.ActivityIn(reg, "flaky", func(_ context.Context, s string) (string, error) {
 		execs.Add(1)
 		return "", errors.New("boom")
 	})
 
 	startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "x", duraturo.WithMaxAttempts(3))
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "x", anchor.WithMaxAttempts(3))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	_, err = h.Result(resultCtx(t))
-	var rfe *duraturo.RunFailedError
+	var rfe *anchor.RunFailedError
 	if !errors.As(err, &rfe) {
 		t.Fatalf("result error = %v, want *RunFailedError", err)
 	}
@@ -244,23 +244,23 @@ func TestWorker_NonRetryableFailsFirstAttempt(t *testing.T) {
 	reg := run.NewRegistry()
 
 	var validateN, wfN atomic.Int64
-	validate := duraturo.ActivityIn(reg, "validate", func(_ context.Context, s string) (string, error) {
+	validate := anchor.ActivityIn(reg, "validate", func(_ context.Context, s string) (string, error) {
 		validateN.Add(1)
-		return "", duraturo.NonRetryable(errors.New("bad input"))
+		return "", anchor.NonRetryable(errors.New("bad input"))
 	})
-	wf := duraturo.ActivityIn(reg, "intake", func(ctx context.Context, s string) (string, error) {
+	wf := anchor.ActivityIn(reg, "intake", func(ctx context.Context, s string) (string, error) {
 		wfN.Add(1)
 		return validate.Call(ctx, s)
 	})
 
 	startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "x", duraturo.WithMaxAttempts(5))
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "x", anchor.WithMaxAttempts(5))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	_, err = h.Result(resultCtx(t))
-	var rfe *duraturo.RunFailedError
+	var rfe *anchor.RunFailedError
 	if !errors.As(err, &rfe) {
 		t.Fatalf("result error = %v, want *RunFailedError", err)
 	}
@@ -297,8 +297,8 @@ func TestWorker_ParkAndSignalResume(t *testing.T) {
 	q := queue.NewMemory()
 	reg := run.NewRegistry()
 
-	wf := duraturo.ActivityIn(reg, "approval-flow", func(ctx context.Context, in string) (string, error) {
-		v, err := duraturo.Event[string](ctx, "approval")
+	wf := anchor.ActivityIn(reg, "approval-flow", func(ctx context.Context, in string) (string, error) {
+		v, err := anchor.Event[string](ctx, "approval")
 		if err != nil {
 			return "", err
 		}
@@ -306,8 +306,8 @@ func TestWorker_ParkAndSignalResume(t *testing.T) {
 	})
 
 	startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "req", duraturo.WithMaxAttempts(1000))
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "req", anchor.WithMaxAttempts(1000))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -333,8 +333,8 @@ func TestWorker_ParkJanitorBackstop(t *testing.T) {
 	q := queue.NewMemory()
 	reg := run.NewRegistry()
 
-	wf := duraturo.ActivityIn(reg, "approval-flow", func(ctx context.Context, in string) (string, error) {
-		v, err := duraturo.Event[string](ctx, "approval")
+	wf := anchor.ActivityIn(reg, "approval-flow", func(ctx context.Context, in string) (string, error) {
+		v, err := anchor.Event[string](ctx, "approval")
 		if err != nil {
 			return "", err
 		}
@@ -344,8 +344,8 @@ func TestWorker_ParkJanitorBackstop(t *testing.T) {
 	// Worker 1 (no janitor) parks the run; stopping it leaves the run
 	// pending in the ledger with nothing in the queue.
 	w1 := startWorker(t, testWorker(lgr, q, reg))
-	c := duraturo.New(lgr, q)
-	h, err := duraturo.Start(context.Background(), c, wf, "req", duraturo.WithMaxAttempts(1000))
+	c := anchor.New(lgr, q)
+	h, err := anchor.Start(context.Background(), c, wf, "req", anchor.WithMaxAttempts(1000))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

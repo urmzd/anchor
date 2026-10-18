@@ -82,13 +82,13 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_USER: duraturo
-          POSTGRES_PASSWORD: duraturo
-          POSTGRES_DB: duraturo
+          POSTGRES_USER: anchor
+          POSTGRES_PASSWORD: anchor
+          POSTGRES_DB: anchor
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U duraturo"
+          --health-cmd "pg_isready -U anchor"
           --health-interval 2s
           --health-timeout 2s
           --health-retries 30
@@ -102,15 +102,15 @@ jobs:
           --health-timeout 2s
           --health-retries 30
     env:
-      DURATURO_POSTGRES_URL: postgres://duraturo:duraturo@localhost:5432/duraturo?sslmode=disable
-      DURATURO_REDIS_ADDR: localhost:6379
+      ANCHOR_POSTGRES_URL: postgres://anchor:anchor@localhost:5432/anchor?sslmode=disable
+      ANCHOR_REDIS_ADDR: localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Apply quickstart schema
-        run: psql "$DURATURO_POSTGRES_URL" -f examples/quickstart/schema.sql
+        run: psql "$ANCHOR_POSTGRES_URL" -f examples/quickstart/schema.sql
       - name: Postgres adapter
         run: go test -tags=integration ./...
         working-directory: adapters/postgres

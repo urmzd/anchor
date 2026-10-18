@@ -31,7 +31,7 @@ func (r *Registry) Register(name string, fn WorkflowFn) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.fns[name]; ok {
-		panic(fmt.Sprintf("duraturo: activity %q registered twice", name))
+		panic(fmt.Sprintf("anchor: activity %q registered twice", name))
 	}
 	r.fns[name] = fn
 }

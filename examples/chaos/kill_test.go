@@ -4,7 +4,7 @@
 // suite (`make test-integration` runs it against the docker-compose infra).
 //
 // The test builds the worker binary, SIGKILLs one instance mid-activity, and
-// starts another. Truth to assert against comes from three places duraturo
+// starts another. Truth to assert against comes from three places anchor
 // does not control: the chaos_effects witness table (raw SQL side effects),
 // the ledger's records, and the Redis delta stream.
 package main
@@ -23,18 +23,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/adapters/postgres/pgledger"
-	"github.com/urmzd/duraturo/adapters/redis/redisqueue"
-	"github.com/urmzd/duraturo/examples/chaos/internal/chaoswf"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/adapters/postgres/pgledger"
+	"github.com/urmzd/anchor/adapters/redis/redisqueue"
+	"github.com/urmzd/anchor/examples/chaos/internal/chaoswf"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 func TestKill_CrossProcessCrashRecovery(t *testing.T) {
 	ctx := context.Background()
-	pgURL := env("DURATURO_POSTGRES_URL", "postgres://duraturo:duraturo@localhost:5432/duraturo")
-	redisAddr := env("DURATURO_REDIS_ADDR", "localhost:6379")
+	pgURL := env("ANCHOR_POSTGRES_URL", "postgres://anchor:anchor@localhost:5432/anchor")
+	redisAddr := env("ANCHOR_REDIS_ADDR", "localhost:6379")
 
 	// (1) Real infra. Ledger tables come from the adapter's own suggested
 	// DDL; chaos_effects is reset wholesale — it is this test's instrument.
@@ -62,9 +62,9 @@ func TestKill_CrossProcessCrashRecovery(t *testing.T) {
 		t.Fatalf("build worker: %v\n%s", err, out)
 	}
 	baseEnv := append(os.Environ(),
-		"DURATURO_POSTGRES_URL="+pgURL,
-		"DURATURO_REDIS_ADDR="+redisAddr,
-		"DURATURO_REDIS_NAMESPACE="+namespace,
+		"ANCHOR_POSTGRES_URL="+pgURL,
+		"ANCHOR_REDIS_ADDR="+redisAddr,
+		"ANCHOR_REDIS_NAMESPACE="+namespace,
 	)
 
 	// (3) Worker process 1: stage-3 sleeps ~3s, holding the run mid-activity
@@ -77,9 +77,9 @@ func TestKill_CrossProcessCrashRecovery(t *testing.T) {
 		t.Fatalf("ledger mapping: %v", err)
 	}
 	q := redisqueue.New(rdb, namespace)
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 	runID := fmt.Sprintf("kill-%d", time.Now().UnixNano())
-	h, err := duraturo.Start(ctx, c, chaoswf.Process, "seed", duraturo.WithRunID(runID))
+	h, err := anchor.Start(ctx, c, chaoswf.Process, "seed", anchor.WithRunID(runID))
 	if err != nil {
 		t.Fatalf("start run: %v", err)
 	}
