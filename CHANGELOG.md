@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0 (2026-10-18)
+
+### .
+
+#### Misc
+
+- **release**: read the sr-releaser key from the release environment (#2) ([97864b2](https://github.com/urmzd/anchor/commit/97864b205e0cc03fc8221938bca0097889034dd6))
+- upgrade urmzd/sr action to v9 (#1) ([f3031fb](https://github.com/urmzd/anchor/commit/f3031fb9d46d9c2fc3d0954fd80a48361c0384a1))
+
+### adapters/postgres
+
+#### Breaking
+
+- rename duraturo to anchor (#3) ([aaaad82](https://github.com/urmzd/anchor/commit/aaaad82fbda62b81616f840dff7c01e54cf88dd3))
+
+### adapters/redis
+
+#### Breaking
+
+- rename duraturo to anchor (#3) ([aaaad82](https://github.com/urmzd/anchor/commit/aaaad82fbda62b81616f840dff7c01e54cf88dd3))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.1.1...v0.2.0)
+
+
 ## 0.1.1 (2026-07-15)
 
 ### .
