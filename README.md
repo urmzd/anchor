@@ -24,7 +24,7 @@
 - **Wrap, don't rewrite**: `Activity`, `Step`, and `Event` wrap the code you have. Outside a run every wrapped function is a plain Go call, so tests, scripts, and codebases mid-migration keep working unchanged. Adoption is monotone.
 - **Interfaces first, no owned schema**: `pkg/ledger.Ledger` and `pkg/queue.Queue` are pure interfaces, the root module has zero third-party dependencies, and the in-memory implementations are complete single-process systems.
 - **Your tables, validated, never migrated**: the Postgres adapter maps onto tables you already own via a declarative `Mapping`. `Validate` introspects the live schema and errors with guidance; `RecommendedDDL` returns suggested DDL and never executes it.
-- **Postgres-only works**: `pgqueue` (`FOR UPDATE SKIP LOCKED`) runs the queue in the same database. Redis (`redisqueue`: a ZSET lease queue plus a Redis Streams delta log) is a throughput upgrade, not a requirement, and is disposable: the janitor rebuilds it from the ledger.
+- **Postgres-only works**: `pgqueue` (`FOR UPDATE SKIP LOCKED`) runs the queue in the same database, and `pgqueue.NewDeltaQueue` adds streaming on an append-only delta table woken by `LISTEN/NOTIFY`. Redis (`redisqueue`: a ZSET lease queue plus a Redis Streams delta log) is a throughput upgrade, not a requirement, and is disposable: the janitor rebuilds it from the ledger.
 - **Activities are the ABI**: record identity is `name#occurrence` (nested calls scoped under their parent's key), so code rolls forward across releases with no version, patch, or pinning APIs; checkpoints stay valid when other, differently-named calls are inserted, removed, or reordered; divergence fails loudly (`ErrNonDeterministic`); a breaking input/output change is a rename (`charge-payment.v2`).
 - **Fenced attempts, budgeted failures**: `(runID, attempt)` fences every claim, with the attempt owned by the queue and incremented at every claim across the run's whole lineage; retry budget is a separate failure counter that moves only when an execution genuinely fails, so waiting and shutdown interruptions are free. The first terminal write wins; heartbeats never touch the ledger. The happy path costs two run-level ledger writes plus one per record.
 - **Waiting is native**: an `Event` is a record that does not exist yet, so the run parks off the queue at zero cost. Resume is one record write plus one enqueue: `Client.Signal`, or a row in your own table with the janitor as backstop.
@@ -196,7 +196,19 @@ for {
 }
 ```
 
-Deltas live on the queue side behind the optional `DeltaLog` capability (Redis Streams in the redis adapter), split by attempt and seal dividers so consumers can discard superseded partial output. Checkpointed activities never re-stream.
+Deltas live on the queue side behind the optional `DeltaLog` capability (an append-only table plus `LISTEN/NOTIFY` in `pgqueue.NewDeltaQueue`, Redis Streams in the redis adapter), split by attempt and seal dividers so consumers can discard superseded partial output. Checkpointed activities never re-stream.
+
+Postgres-only streaming swaps `pgqueue.New` for `pgqueue.NewDeltaQueue` and one more table (apply `pgqueue.RecommendedDeltaDDL` with your own migration tooling):
+
+```go
+q, err := pgqueue.NewDeltaQueue(pool, pgqueue.DefaultMapping(), pgqueue.DefaultDeltaMapping())
+if err != nil {
+	log.Fatal(err)
+}
+if err := q.Validate(ctx); err != nil {
+	log.Fatal(err) // checks both the queue and the delta table
+}
+```
 
 ## Concepts
 
