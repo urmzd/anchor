@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // memState is a run's position in the queue lifecycle.

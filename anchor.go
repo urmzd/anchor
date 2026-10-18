@@ -1,4 +1,4 @@
-// Package duraturo makes existing Go code durable without rewrites.
+// Package anchor makes existing Go code durable without rewrites.
 //
 // Three concepts, nothing else:
 //
@@ -16,7 +16,7 @@
 //
 // Outside a run every wrapped function is a plain Go call — code keeps
 // working unchanged in tests, scripts, and codebases mid-migration.
-package duraturo
+package anchor
 
 // Void is the output type for effect-only activities: the (input, output)
 // shape stays uniform, effect-only activities return Void{}.

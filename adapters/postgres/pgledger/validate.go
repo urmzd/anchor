@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pgident"
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pginspect"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pginspect"
 )
 
 // envelopeTypes are the column types an envelope may have. jsonb is
@@ -145,7 +145,7 @@ func RecommendedDDL(m Mapping) string {
 
 func runsDDL(r RunsMap) string {
 	var b strings.Builder
-	b.WriteString("-- Runs table for pgledger. Suggested only: duraturo never executes DDL.\n")
+	b.WriteString("-- Runs table for pgledger. Suggested only: anchor never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(r.Table))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.RunID))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.Status))
@@ -174,7 +174,7 @@ func runsDDL(r RunsMap) string {
 
 func recordsDDL(r RecordsMap) string {
 	var b strings.Builder
-	b.WriteString("-- Records table for pgledger. Suggested only: duraturo never executes DDL.\n")
+	b.WriteString("-- Records table for pgledger. Suggested only: anchor never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(r.Table))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.RunID))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.Key))

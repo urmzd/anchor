@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pgident"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Compile-time contract checks: Ledger is a ledger.Ledger and offers the

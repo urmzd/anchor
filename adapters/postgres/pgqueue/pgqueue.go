@@ -1,4 +1,4 @@
-// Package pgqueue implements duraturo's queue.Queue on a PostgreSQL table
+// Package pgqueue implements anchor's queue.Queue on a PostgreSQL table
 // the application already owns.
 //
 // Like pgledger, this adapter requires no additional database and no table
@@ -22,7 +22,7 @@
 // tooling.
 //
 // This adapter does not implement queue.DeltaLog in v1: streaming is the
-// Redis adapter's domain, and duraturo's Emit degrades to a no-op when the
+// Redis adapter's domain, and anchor's Emit degrades to a no-op when the
 // queue offers no delta log. Losing deltas loses observability history,
 // never correctness.
 package pgqueue
@@ -39,9 +39,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pgident"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // defaultPollInterval is how often a blocked Claim re-checks for claimable
@@ -49,7 +49,7 @@ import (
 const defaultPollInterval = 200 * time.Millisecond
 
 // Scope is an optional discriminator for queue tables shared with
-// non-duraturo rows: every row written carries Value in Column and every
+// non-anchor rows: every row written carries Value in Column and every
 // statement filters on it.
 type Scope struct {
 	Column string
@@ -87,10 +87,10 @@ type Mapping struct {
 }
 
 // DefaultMapping returns the mapping matching RecommendedDDL's suggested
-// duraturo_queue table.
+// anchor_queue table.
 func DefaultMapping() Mapping {
 	return Mapping{
-		Table:      "duraturo_queue",
+		Table:      "anchor_queue",
 		RunID:      "run_id",
 		ReadyAt:    "ready_at",
 		LeaseUntil: "lease_until",

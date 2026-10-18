@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // racers is the number of goroutines the concurrency subtests race against

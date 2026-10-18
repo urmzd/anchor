@@ -1,23 +1,23 @@
 <p align="center">
-  <h1 align="center">duraturo</h1>
+  <h1 align="center">anchor</h1>
   <p align="center">
     Durable execution for existing Go code: wrap your functions, run a worker, done.
     <br /><br />
-    <a href="https://github.com/urmzd/duraturo/issues">Report Bug</a>
+    <a href="https://github.com/urmzd/anchor/issues">Report Bug</a>
     &middot;
-    <a href="https://pkg.go.dev/github.com/urmzd/duraturo">Go Docs</a>
+    <a href="https://pkg.go.dev/github.com/urmzd/anchor">Go Docs</a>
   </p>
 </p>
 
 <p align="center">
-  <a href="https://github.com/urmzd/duraturo/actions/workflows/ci.yml"><img src="https://github.com/urmzd/duraturo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/urmzd/anchor/actions/workflows/ci.yml"><img src="https://github.com/urmzd/anchor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   &nbsp;
-  <a href="https://pkg.go.dev/github.com/urmzd/duraturo"><img src="https://pkg.go.dev/badge/github.com/urmzd/duraturo.svg" alt="Go Reference"></a>
+  <a href="https://pkg.go.dev/github.com/urmzd/anchor"><img src="https://pkg.go.dev/badge/github.com/urmzd/anchor.svg" alt="Go Reference"></a>
   &nbsp;
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/urmzd/duraturo" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/urmzd/anchor" alt="License"></a>
 </p>
 
-> **Beta.** duraturo is pre-1.0 and under active development. Interfaces are stabilizing but may change between minor versions, and the Postgres and Redis adapters are young. Crash recovery and graceful shutdown are correct today: a cancelled worker persists in-flight outcomes and hands interrupted runs back without burning retry budget. Workflow bodies are single-goroutine in v1; distributed activities, forking and child runs, and durable timers are on the roadmap.
+> **Beta.** anchor is pre-1.0 and under active development. Interfaces are stabilizing but may change between minor versions, and the Postgres and Redis adapters are young. Crash recovery and graceful shutdown are correct today: a cancelled worker persists in-flight outcomes and hands interrupted runs back without burning retry budget. Workflow bodies are single-goroutine in v1; distributed activities, forking and child runs, and durable timers are on the roadmap.
 
 ## Features
 
@@ -34,14 +34,14 @@
 ## Installation
 
 ```sh
-go get github.com/urmzd/duraturo
+go get github.com/urmzd/anchor
 ```
 
 The adapters are separate modules, so their dependencies never touch yours until you choose one:
 
 ```sh
-go get github.com/urmzd/duraturo/adapters/postgres
-go get github.com/urmzd/duraturo/adapters/redis
+go get github.com/urmzd/anchor/adapters/postgres
+go get github.com/urmzd/anchor/adapters/redis
 ```
 
 ## Quick Start
@@ -68,10 +68,10 @@ It works, until the process dies between the charge and the email. Wrap the piec
 
 ```go
 var (
-	chargePayment    = duraturo.Activity("charge-payment", charge)
-	reserveInventory = duraturo.Activity("reserve-inventory", reserve)
-	sendConfirmation = duraturo.Activity("send-confirmation", confirm)
-	processOrder     = duraturo.Activity("process-order", process)
+	chargePayment    = anchor.Activity("charge-payment", charge)
+	reserveInventory = anchor.Activity("reserve-inventory", reserve)
+	sendConfirmation = anchor.Activity("send-confirmation", confirm)
+	processOrder     = anchor.Activity("process-order", process)
 )
 
 func process(ctx context.Context, o Order) (Receipt, error) {
@@ -86,7 +86,7 @@ func process(ctx context.Context, o Order) (Receipt, error) {
 		return Receipt{}, err
 	}
 	// Step records inline non-determinism: the first value is the value forever.
-	issuedAt, err := duraturo.Step(ctx, "issued-at",
+	issuedAt, err := anchor.Step(ctx, "issued-at",
 		func(context.Context) (time.Time, error) { return time.Now(), nil })
 	if err != nil {
 		return Receipt{}, err
@@ -98,8 +98,8 @@ func process(ctx context.Context, o Order) (Receipt, error) {
 Then wire a ledger, a queue, and a worker. The worker can be your own process:
 
 ```go
-// Ledger: your Postgres, your tables. duraturo only validates, never migrates.
-pool, _ := pgxpool.New(ctx, "postgres://duraturo:duraturo@localhost:5432/duraturo")
+// Ledger: your Postgres, your tables. anchor only validates, never migrates.
+pool, _ := pgxpool.New(ctx, "postgres://anchor:anchor@localhost:5432/anchor")
 lgr, err := pgledger.New(pool, pgledger.DefaultMapping())
 if err != nil {
 	log.Fatal(err)
@@ -112,15 +112,15 @@ if err := lgr.Validate(ctx); err != nil {
 rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 q := redisqueue.New(rdb, "quickstart")
 
-c := duraturo.New(lgr, q)
+c := anchor.New(lgr, q)
 
 // The worker is a pull loop, not a service: run it on a goroutine.
 w := worker.New(lgr, q)
 go w.Run(ctx)
 
-receipt, err := duraturo.Exec(ctx, c, processOrder,
+receipt, err := anchor.Exec(ctx, c, processOrder,
 	Order{ID: "1042", Email: "ada@example.com", Amount: 2400},
-	duraturo.WithRunID("order-1042")) // the run ID is the submit idempotency key
+	anchor.WithRunID("order-1042")) // the run ID is the submit idempotency key
 ```
 
 Now kill the worker after `charge-payment` records. The lease lapses, the next claim takes attempt N+1, and the workflow re-executes from the top: `charge-payment` returns instantly from the ledger instead of executing (no double charge), `reserve-inventory` likewise, and execution resumes for real at the first unrecorded call. The quickstart demos exactly this: it crashes its own worker mid-confirmation and lets a second worker finish the order.
@@ -132,7 +132,7 @@ make demo                     # or: cd examples/quickstart && go run .
 
 ## Bring Your Own Tables
 
-`DefaultMapping` targets the suggested `duraturo_runs` / `duraturo_records` tables, but a mapping can point at tables you already have, including tables shared with other rows:
+`DefaultMapping` targets the suggested `anchor_runs` / `anchor_records` tables, but a mapping can point at tables you already have, including tables shared with other rows:
 
 ```go
 lgr, err := pgledger.New(pool, pgledger.Mapping{
@@ -147,8 +147,8 @@ lgr, err := pgledger.New(pool, pgledger.Mapping{
 		RunID:    "order_ref",
 		Key:      "event_key",
 		Envelope: "payload",
-		// Scope: this table also holds non-duraturo rows; see only ours.
-		Scope: pgledger.Scope{Column: "source", Value: "duraturo"},
+		// Scope: this table also holds non-anchor rows; see only ours.
+		Scope: pgledger.Scope{Column: "source", Value: "anchor"},
 		// Defaults: fill your own NOT NULL columns on insert.
 		Defaults: func(rec run.Record) map[string]any {
 			return map[string]any{"tenant_id": "acme"}
@@ -171,7 +171,7 @@ Waiting is the absence of a record. An `Event` with no record parks the run: set
 
 ```go
 // In the workflow: park until someone approves.
-approval, err := duraturo.Event[Approval](ctx, "approval")
+approval, err := anchor.Event[Approval](ctx, "approval")
 
 // Anywhere else, any process: approve and wake the run.
 err = c.Signal(ctx, "order-1042", "approval", Approval{By: "ada"})
@@ -183,7 +183,7 @@ err = c.Signal(ctx, "order-1042", "approval", Approval{By: "ada"})
 
 ```go
 // Inside an activity: emit deltas.
-_ = duraturo.Emit(ctx, progress{Stage: "charged"})
+_ = anchor.Emit(ctx, progress{Stage: "charged"})
 
 // Anywhere: catch-up, then live tail.
 stream, _ := c.Watch(ctx, "order-1042", "")

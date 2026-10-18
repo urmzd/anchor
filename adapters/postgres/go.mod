@@ -1,10 +1,10 @@
-module github.com/urmzd/duraturo/adapters/postgres
+module github.com/urmzd/anchor/adapters/postgres
 
 go 1.26.4
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/urmzd/duraturo v0.1.0
+	github.com/urmzd/anchor v0.2.0
 )
 
 require (
@@ -16,4 +16,4 @@ require (
 	golang.org/x/text v0.24.0 // indirect
 )
 
-replace github.com/urmzd/duraturo => ../..
+replace github.com/urmzd/anchor => ../..

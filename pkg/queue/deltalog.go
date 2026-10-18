@@ -3,7 +3,7 @@ package queue
 import (
 	"context"
 
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Cursor is an opaque, backend-specific position in a run's delta log.

@@ -1,4 +1,4 @@
-package duraturo_test
+package anchor_test
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/replay"
-	"github.com/urmzd/duraturo/pkg/run"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/replay"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // inRun executes fn under a fresh frame for the given run — the SDK-level
@@ -35,7 +35,7 @@ func newRun(t *testing.T, lgr ledger.Ledger, id string) {
 func TestActivity_PassThroughOutsideRun(t *testing.T) {
 	reg := run.NewRegistry()
 	calls := 0
-	double := duraturo.ActivityIn(reg, "double", func(_ context.Context, n int) (int, error) {
+	double := anchor.ActivityIn(reg, "double", func(_ context.Context, n int) (int, error) {
 		calls++
 		return n * 2, nil
 	})
@@ -43,10 +43,10 @@ func TestActivity_PassThroughOutsideRun(t *testing.T) {
 	if err != nil || out != 42 || calls != 1 {
 		t.Fatalf("pass-through: out=%d err=%v calls=%d", out, err, calls)
 	}
-	if duraturo.InRun(context.Background()) {
+	if anchor.InRun(context.Background()) {
 		t.Fatal("InRun outside a run")
 	}
-	if k := duraturo.IdempotencyKey(context.Background()); k != "" {
+	if k := anchor.IdempotencyKey(context.Background()); k != "" {
 		t.Fatalf("IdempotencyKey outside run = %q", k)
 	}
 }
@@ -57,7 +57,7 @@ func TestActivity_MemoizedAcrossAttempts(t *testing.T) {
 	newRun(t, lgr, "r1")
 
 	calls := 0
-	stamp := duraturo.ActivityIn(reg, "stamp", func(_ context.Context, s string) (string, error) {
+	stamp := anchor.ActivityIn(reg, "stamp", func(_ context.Context, s string) (string, error) {
 		calls++
 		return s + "!", nil
 	})
@@ -94,12 +94,12 @@ func TestStep_FirstValueIsForever(t *testing.T) {
 	var v1, v2 int
 	_ = inRun(t, lgr, nil, "r1", 1, func(ctx context.Context) error {
 		var err error
-		v1, err = duraturo.Step(ctx, "roll", roll)
+		v1, err = anchor.Step(ctx, "roll", roll)
 		return err
 	})
 	_ = inRun(t, lgr, nil, "r1", 2, func(ctx context.Context) error {
 		var err error
-		v2, err = duraturo.Step(ctx, "roll", roll)
+		v2, err = anchor.Step(ctx, "roll", roll)
 		return err
 	})
 	if v1 != 100 || v2 != 100 || n != 1 {
@@ -110,11 +110,11 @@ func TestStep_FirstValueIsForever(t *testing.T) {
 func TestEvent_ParksThenResumesViaSignal(t *testing.T) {
 	lgr := ledger.NewMemory()
 	q := queue.NewMemory()
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 	newRun(t, lgr, "r1")
 
 	workflow := func(ctx context.Context) (string, error) {
-		return duraturo.Event[string](ctx, "approval")
+		return anchor.Event[string](ctx, "approval")
 	}
 
 	err := inRun(t, lgr, q, "r1", 1, func(ctx context.Context) error {
@@ -153,7 +153,7 @@ func TestEvent_ParksThenResumesViaSignal(t *testing.T) {
 func TestSignal_SuccessiveOccurrences(t *testing.T) {
 	lgr := ledger.NewMemory()
 	q := queue.NewMemory()
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 	newRun(t, lgr, "r1")
 
 	if err := c.Signal(context.Background(), "r1", "input", "one"); err != nil {
@@ -166,7 +166,7 @@ func TestSignal_SuccessiveOccurrences(t *testing.T) {
 	var got []string
 	if err := inRun(t, lgr, q, "r1", 1, func(ctx context.Context) error {
 		for i := 0; i < 2; i++ {
-			v, err := duraturo.Event[string](ctx, "input")
+			v, err := anchor.Event[string](ctx, "input")
 			if err != nil {
 				return err
 			}
@@ -185,15 +185,15 @@ func TestStart_RunIDIsIdempotencyKey(t *testing.T) {
 	reg := run.NewRegistry()
 	lgr := ledger.NewMemory()
 	q := queue.NewMemory()
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 
-	wf := duraturo.ActivityIn(reg, "wf", func(_ context.Context, s string) (string, error) { return s, nil })
+	wf := anchor.ActivityIn(reg, "wf", func(_ context.Context, s string) (string, error) { return s, nil })
 
-	h1, err := duraturo.Start(context.Background(), c, wf, "a", duraturo.WithRunID("order-1"))
+	h1, err := anchor.Start(context.Background(), c, wf, "a", anchor.WithRunID("order-1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, err := duraturo.Start(context.Background(), c, wf, "DIFFERENT", duraturo.WithRunID("order-1"))
+	h2, err := anchor.Start(context.Background(), c, wf, "DIFFERENT", anchor.WithRunID("order-1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,21 +213,21 @@ func TestStart_RunIDIsIdempotencyKey(t *testing.T) {
 
 func TestStart_UnserializableInputFailsEagerly(t *testing.T) {
 	reg := run.NewRegistry()
-	c := duraturo.New(ledger.NewMemory(), queue.NewMemory())
-	bad := duraturo.ActivityIn(reg, "bad", func(_ context.Context, ch chan int) (int, error) { return 0, nil })
-	if _, err := duraturo.Start(context.Background(), c, bad, make(chan int)); err == nil {
+	c := anchor.New(ledger.NewMemory(), queue.NewMemory())
+	bad := anchor.ActivityIn(reg, "bad", func(_ context.Context, ch chan int) (int, error) { return 0, nil })
+	if _, err := anchor.Start(context.Background(), c, bad, make(chan int)); err == nil {
 		t.Fatal("chan input must fail at Start")
 	}
 }
 
 func TestEmit_NoOpWithoutRunOrDeltaLog(t *testing.T) {
-	if err := duraturo.Emit(context.Background(), "ignored"); err != nil {
+	if err := anchor.Emit(context.Background(), "ignored"); err != nil {
 		t.Fatalf("emit outside run: %v", err)
 	}
 	lgr := ledger.NewMemory()
 	newRun(t, lgr, "r1")
 	if err := inRun(t, lgr, nil, "r1", 1, func(ctx context.Context) error {
-		return duraturo.Emit(ctx, "no delta log")
+		return anchor.Emit(ctx, "no delta log")
 	}); err != nil {
 		t.Fatalf("emit without capability: %v", err)
 	}
@@ -239,12 +239,12 @@ func TestIdempotencyKey_InsideActivity(t *testing.T) {
 	newRun(t, lgr, "r1")
 
 	var key string
-	capture := duraturo.ActivityIn(reg, "capture", func(ctx context.Context, _ duraturo.Void) (duraturo.Void, error) {
-		key = duraturo.IdempotencyKey(ctx)
-		return duraturo.Void{}, nil
+	capture := anchor.ActivityIn(reg, "capture", func(ctx context.Context, _ anchor.Void) (anchor.Void, error) {
+		key = anchor.IdempotencyKey(ctx)
+		return anchor.Void{}, nil
 	})
 	if err := inRun(t, lgr, nil, "r1", 1, func(ctx context.Context) error {
-		_, err := capture.Call(ctx, duraturo.Void{})
+		_, err := capture.Call(ctx, anchor.Void{})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -267,12 +267,12 @@ func TestDecodeDrift_IsTerminal(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	typed := duraturo.ActivityIn(reg, "typed", func(_ context.Context, s string) (int, error) { return 1, nil })
+	typed := anchor.ActivityIn(reg, "typed", func(_ context.Context, s string) (int, error) { return 1, nil })
 	err := inRun(t, lgr, nil, "r1", 1, func(ctx context.Context) error {
 		_, err := typed.Call(ctx, "in")
 		return err
 	})
-	var de *duraturo.DecodeError
+	var de *anchor.DecodeError
 	if !errors.As(err, &de) {
 		t.Fatalf("want DecodeError, got %v", err)
 	}

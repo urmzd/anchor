@@ -28,7 +28,7 @@ type Item struct {
 	Failures int
 }
 
-// Queue is duraturo's delivery primitive. Implementations must satisfy the
+// Queue is anchor's delivery primitive. Implementations must satisfy the
 // conformance suite in queuetest.
 type Queue interface {
 	// Enqueue makes runID claimable after delay (0 = immediately).

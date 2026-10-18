@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/ledger/ledgertest"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/ledger/ledgertest"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 func TestMemoryConformance(t *testing.T) {

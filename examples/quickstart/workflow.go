@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	duraturo "github.com/urmzd/duraturo"
+	anchor "github.com/urmzd/anchor"
 )
 
 // Order is the workflow input.
@@ -43,29 +43,29 @@ var (
 // The activities are plain functions wrapped once at package level. Outside
 // a run they are ordinary Go calls; under a worker they are memoized.
 var (
-	chargePayment    = duraturo.Activity("charge-payment", charge)
-	reserveInventory = duraturo.Activity("reserve-inventory", reserve)
-	sendConfirmation = duraturo.Activity("send-confirmation", confirm)
-	processOrder     = duraturo.Activity("process-order", process)
+	chargePayment    = anchor.Activity("charge-payment", charge)
+	reserveInventory = anchor.Activity("reserve-inventory", reserve)
+	sendConfirmation = anchor.Activity("send-confirmation", confirm)
+	processOrder     = anchor.Activity("process-order", process)
 )
 
 func charge(ctx context.Context, o Order) (string, error) {
 	chargeCalls.Add(1)
 	// Hand the stable per-call key to the payment provider: even if this
 	// activity re-executes in the at-least-once window, a deduplicating
-	// provider charges once. duraturo's at-least-once becomes effective-once.
+	// provider charges once. anchor's at-least-once becomes effective-once.
 	fmt.Printf("  charge   $%d.%02d  idempotency key %s\n",
-		o.Amount/100, o.Amount%100, duraturo.IdempotencyKey(ctx))
+		o.Amount/100, o.Amount%100, anchor.IdempotencyKey(ctx))
 	return "ch_" + o.ID, nil
 }
 
-func reserve(ctx context.Context, o Order) (duraturo.Void, error) {
+func reserve(ctx context.Context, o Order) (anchor.Void, error) {
 	reserveCalls.Add(1)
 	fmt.Printf("  reserve  1 unit for order %s\n", o.ID)
-	return duraturo.Void{}, nil
+	return anchor.Void{}, nil
 }
 
-func confirm(ctx context.Context, o Order) (duraturo.Void, error) {
+func confirm(ctx context.Context, o Order) (anchor.Void, error) {
 	confirmCalls.Add(1)
 	if confirmShouldHang.CompareAndSwap(true, false) {
 		select {
@@ -73,10 +73,10 @@ func confirm(ctx context.Context, o Order) (duraturo.Void, error) {
 		default:
 		}
 		<-ctx.Done() // the worker dies here; no record is written
-		return duraturo.Void{}, ctx.Err()
+		return anchor.Void{}, ctx.Err()
 	}
 	fmt.Printf("  confirm  email to %s\n", o.Email)
-	return duraturo.Void{}, nil
+	return anchor.Void{}, nil
 }
 
 // process is the orchestrator — itself just an activity that calls others.
@@ -87,21 +87,21 @@ func process(ctx context.Context, o Order) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	_ = duraturo.Emit(ctx, progress{Stage: "charged"})
+	_ = anchor.Emit(ctx, progress{Stage: "charged"})
 
 	if _, err := reserveInventory.Call(ctx, o); err != nil {
 		return Receipt{}, err
 	}
-	_ = duraturo.Emit(ctx, progress{Stage: "reserved"})
+	_ = anchor.Emit(ctx, progress{Stage: "reserved"})
 
 	if _, err := sendConfirmation.Call(ctx, o); err != nil {
 		return Receipt{}, err
 	}
-	_ = duraturo.Emit(ctx, progress{Stage: "confirmed"})
+	_ = anchor.Emit(ctx, progress{Stage: "confirmed"})
 
 	// Step records inline non-determinism: the first value is the value
 	// forever, so replays never shift the receipt time.
-	issuedAt, err := duraturo.Step(ctx, "issued-at",
+	issuedAt, err := anchor.Step(ctx, "issued-at",
 		func(context.Context) (time.Time, error) { return time.Now(), nil })
 	if err != nil {
 		return Receipt{}, err

@@ -1,3 +1,3 @@
-module github.com/urmzd/duraturo
+module github.com/urmzd/anchor
 
 go 1.26.4

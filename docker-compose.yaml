@@ -1,21 +1,21 @@
 # Quickstart infrastructure. Not architecturally required: the ledger and
 # queue are interfaces, and a Postgres-only (or fully in-memory) deployment
 # is supported. The suggested schema is applied by Postgres's own init hook,
-# never by duraturo code.
+# never by anchor code.
 services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: duraturo
-      POSTGRES_PASSWORD: duraturo
-      POSTGRES_DB: duraturo
+      POSTGRES_USER: anchor
+      POSTGRES_PASSWORD: anchor
+      POSTGRES_DB: anchor
     ports:
       - "5432:5432"
     volumes:
       - ./examples/quickstart/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U duraturo"]
+      test: ["CMD-SHELL", "pg_isready -U anchor"]
       interval: 2s
       timeout: 2s
       retries: 30

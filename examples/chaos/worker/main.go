@@ -19,10 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/urmzd/duraturo/adapters/postgres/pgledger"
-	"github.com/urmzd/duraturo/adapters/redis/redisqueue"
-	"github.com/urmzd/duraturo/examples/chaos/internal/chaoswf"
-	"github.com/urmzd/duraturo/pkg/worker"
+	"github.com/urmzd/anchor/adapters/postgres/pgledger"
+	"github.com/urmzd/anchor/adapters/redis/redisqueue"
+	"github.com/urmzd/anchor/examples/chaos/internal/chaoswf"
+	"github.com/urmzd/anchor/pkg/worker"
 )
 
 func env(key, fallback string) string {
@@ -36,14 +36,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, env("DURATURO_POSTGRES_URL",
-		"postgres://duraturo:duraturo@localhost:5432/duraturo"))
+	pool, err := pgxpool.New(ctx, env("ANCHOR_POSTGRES_URL",
+		"postgres://anchor:anchor@localhost:5432/anchor"))
 	if err != nil {
 		fatal("connect postgres: %v", err)
 	}
 	defer pool.Close()
 
-	// The witness table is the example's own; duraturo never sees it.
+	// The witness table is the example's own; anchor never sees it.
 	if _, err := pool.Exec(ctx, chaoswf.EffectsDDL); err != nil {
 		fatal("create chaos_effects: %v", err)
 	}
@@ -57,9 +57,9 @@ func main() {
 		fatal("ledger schema: %v", err)
 	}
 
-	rdb := redis.NewClient(&redis.Options{Addr: env("DURATURO_REDIS_ADDR", "localhost:6379")})
+	rdb := redis.NewClient(&redis.Options{Addr: env("ANCHOR_REDIS_ADDR", "localhost:6379")})
 	defer func() { _ = rdb.Close() }()
-	q := redisqueue.New(rdb, env("DURATURO_REDIS_NAMESPACE", "chaos"))
+	q := redisqueue.New(rdb, env("ANCHOR_REDIS_NAMESPACE", "chaos"))
 
 	// Short lease + quick heartbeat: a killed worker's claim lapses within
 	// ~2s, so a peer picks the run up fast. Logs go to stderr for the test's

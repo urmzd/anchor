@@ -18,10 +18,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/adapters/postgres/pgledger"
-	"github.com/urmzd/duraturo/adapters/redis/redisqueue"
-	"github.com/urmzd/duraturo/pkg/worker"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/adapters/postgres/pgledger"
+	"github.com/urmzd/anchor/adapters/redis/redisqueue"
+	"github.com/urmzd/anchor/pkg/worker"
 )
 
 func env(key, fallback string) string {
@@ -35,9 +35,9 @@ func main() {
 	ctx := context.Background()
 
 	// Ledger: your Postgres, your tables. The compose file's init hook
-	// applied schema.sql; duraturo only validates, never migrates.
-	pool, err := pgxpool.New(ctx, env("DURATURO_POSTGRES_URL",
-		"postgres://duraturo:duraturo@localhost:5432/duraturo"))
+	// applied schema.sql; anchor only validates, never migrates.
+	pool, err := pgxpool.New(ctx, env("ANCHOR_POSTGRES_URL",
+		"postgres://anchor:anchor@localhost:5432/anchor"))
 	if err != nil {
 		fatal("connect postgres: %v", err)
 	}
@@ -52,11 +52,11 @@ func main() {
 
 	// Queue: disposable flow. Wiping Redis loses no runs — they live in the
 	// ledger.
-	rdb := redis.NewClient(&redis.Options{Addr: env("DURATURO_REDIS_ADDR", "localhost:6379")})
+	rdb := redis.NewClient(&redis.Options{Addr: env("ANCHOR_REDIS_ADDR", "localhost:6379")})
 	defer func() { _ = rdb.Close() }()
 	q := redisqueue.New(rdb, "quickstart")
 
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 	batch := time.Now().UnixMilli() // fresh order IDs per demo run; the run ID is the submit idempotency key
 
 	// The worker can be your own process: a pull loop on a goroutine, not a
@@ -65,9 +65,9 @@ func main() {
 	go runWorker(worker1Ctx, lgr, q)
 
 	fmt.Println("order 1 — the happy path")
-	receipt, err := duraturo.Exec(ctx, c, processOrder,
+	receipt, err := anchor.Exec(ctx, c, processOrder,
 		Order{ID: fmt.Sprintf("%d-1", batch), Email: "ada@example.com", Amount: 2400},
-		duraturo.WithRunID(fmt.Sprintf("order-%d-1", batch)))
+		anchor.WithRunID(fmt.Sprintf("order-%d-1", batch)))
 	if err != nil {
 		fatal("order 1: %v", err)
 	}
@@ -76,9 +76,9 @@ func main() {
 
 	fmt.Println("order 2 — the worker dies mid-confirmation")
 	confirmShouldHang.Store(true)
-	h, err := duraturo.Start(ctx, c, processOrder,
+	h, err := anchor.Start(ctx, c, processOrder,
 		Order{ID: fmt.Sprintf("%d-2", batch), Email: "lin@example.com", Amount: 1800},
-		duraturo.WithRunID(fmt.Sprintf("order-%d-2", batch)))
+		anchor.WithRunID(fmt.Sprintf("order-%d-2", batch)))
 	if err != nil {
 		fatal("order 2: %v", err)
 	}

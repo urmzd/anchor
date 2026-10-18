@@ -8,8 +8,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Stream entry field names. The payload travels as raw bytes; everything

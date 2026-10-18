@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	duraturo "github.com/urmzd/duraturo"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
-	"github.com/urmzd/duraturo/pkg/worker"
+	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
+	"github.com/urmzd/anchor/pkg/worker"
 )
 
 // Regression: review finding — parked runs must never burn retry budget.
@@ -21,10 +21,10 @@ func TestRegression_ParkBurnsNoBudget(t *testing.T) {
 	lgr := ledger.NewMemory()
 	q := queue.NewMemory()
 	reg := run.NewRegistry()
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 
-	wf := duraturo.ActivityIn(reg, "gated", func(ctx context.Context, _ duraturo.Void) (string, error) {
-		return duraturo.Event[string](ctx, "approval")
+	wf := anchor.ActivityIn(reg, "gated", func(ctx context.Context, _ anchor.Void) (string, error) {
+		return anchor.Event[string](ctx, "approval")
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,7 +38,7 @@ func TestRegression_ParkBurnsNoBudget(t *testing.T) {
 	)
 	go func() { _ = w.Run(ctx) }()
 
-	h, err := duraturo.Start(context.Background(), c, wf, duraturo.Void{}, duraturo.WithMaxAttempts(2))
+	h, err := anchor.Start(context.Background(), c, wf, anchor.Void{}, anchor.WithMaxAttempts(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,12 +104,12 @@ func TestRegression_GracefulShutdownReleasesCleanly(t *testing.T) {
 	lgr := ledger.NewMemory()
 	q := &ctxCheckQueue{Memory: queue.NewMemory(), t: t}
 	reg := run.NewRegistry()
-	c := duraturo.New(lgr, q)
+	c := anchor.New(lgr, q)
 
 	started := make(chan struct{}, 4)
 	block := make(chan struct{})
 	var executions atomic.Int32
-	wf := duraturo.ActivityIn(reg, "slow", func(ctx context.Context, _ duraturo.Void) (string, error) {
+	wf := anchor.ActivityIn(reg, "slow", func(ctx context.Context, _ anchor.Void) (string, error) {
 		executions.Add(1)
 		started <- struct{}{}
 		select {
@@ -130,7 +130,7 @@ func TestRegression_GracefulShutdownReleasesCleanly(t *testing.T) {
 	w1Done := make(chan struct{})
 	go func() { _ = w1.Run(ctx1); close(w1Done) }()
 
-	h, err := duraturo.Start(context.Background(), c, wf, duraturo.Void{}, duraturo.WithMaxAttempts(1))
+	h, err := anchor.Start(context.Background(), c, wf, anchor.Void{}, anchor.WithMaxAttempts(1))
 	if err != nil {
 		t.Fatal(err)
 	}

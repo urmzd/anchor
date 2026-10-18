@@ -1,7 +1,7 @@
-// Package pgledger implements duraturo's ledger.Ledger on PostgreSQL tables
+// Package pgledger implements anchor's ledger.Ledger on PostgreSQL tables
 // the application already owns.
 //
-// duraturo requires no additional database and no tables of its own. The
+// anchor requires no additional database and no tables of its own. The
 // adapter is configured with a declarative Mapping naming the caller's
 // tables and columns: New checks the mapping's shape, Validate introspects
 // the live database and reports exactly what is missing (down to the CREATE
@@ -18,7 +18,7 @@
 // working. []byte fields appear base64-encoded inside the envelope, per
 // encoding/json.
 //
-// Shared tables: set Scope to discriminate duraturo's rows inside a table
+// Shared tables: set Scope to discriminate anchor's rows inside a table
 // that also holds other data. Set Defaults to fill the caller's own NOT NULL
 // columns on insert.
 package pgledger
@@ -26,11 +26,11 @@ package pgledger
 import (
 	"errors"
 
-	"github.com/urmzd/duraturo/adapters/postgres/internal/pgident"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
-// Scope is an optional discriminator for tables shared with non-duraturo
+// Scope is an optional discriminator for tables shared with non-anchor
 // rows. When Column is set, every row the adapter writes carries Value in
 // that column and every statement filters on it, so the adapter sees only
 // its own slice of the table.
@@ -92,18 +92,18 @@ type Mapping struct {
 }
 
 // DefaultMapping returns the mapping matching RecommendedDDL's suggested
-// duraturo_runs / duraturo_records tables.
+// anchor_runs / anchor_records tables.
 func DefaultMapping() Mapping {
 	return Mapping{
 		Runs: RunsMap{
-			Table:     "duraturo_runs",
+			Table:     "anchor_runs",
 			RunID:     "run_id",
 			Status:    "status",
 			Envelope:  "envelope",
 			CreatedAt: "created_at",
 		},
 		Records: RecordsMap{
-			Table:    "duraturo_records",
+			Table:    "anchor_records",
 			RunID:    "run_id",
 			Key:      "record_key",
 			Envelope: "envelope",

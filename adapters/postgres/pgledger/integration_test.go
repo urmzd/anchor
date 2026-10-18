@@ -14,10 +14,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/urmzd/duraturo/adapters/postgres/pgledger"
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/ledger/ledgertest"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/adapters/postgres/pgledger"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/ledger/ledgertest"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // The integration harness owns all DDL: it applies pgledger.RecommendedDDL
@@ -26,9 +26,9 @@ import (
 
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("DURATURO_POSTGRES_URL")
+	url := os.Getenv("ANCHOR_POSTGRES_URL")
 	if url == "" {
-		url = "postgres://duraturo:duraturo@localhost:5432/duraturo"
+		url = "postgres://anchor:anchor@localhost:5432/anchor"
 	}
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
@@ -161,7 +161,7 @@ CREATE UNIQUE INDEX ON %[2]s (correlation_id, event_key)`, runsTable, eventsTabl
 				Envelope: "payload",
 				// CreatedAt deliberately unmapped: exercises the
 				// envelope fallback for ListPending.
-				Scope: pgledger.Scope{Column: "source", Value: "duraturo"},
+				Scope: pgledger.Scope{Column: "source", Value: "anchor"},
 				Defaults: func(r run.Run) map[string]any {
 					return map[string]any{"tenant": "acme"}
 				},
@@ -171,7 +171,7 @@ CREATE UNIQUE INDEX ON %[2]s (correlation_id, event_key)`, runsTable, eventsTabl
 				RunID:    "correlation_id",
 				Key:      "event_key",
 				Envelope: "payload",
-				Scope:    pgledger.Scope{Column: "source", Value: "duraturo"},
+				Scope:    pgledger.Scope{Column: "source", Value: "anchor"},
 				Defaults: func(rec run.Record) map[string]any {
 					return map[string]any{"tenant": "acme"}
 				},
@@ -229,12 +229,12 @@ CREATE UNIQUE INDEX ON %[1]s (correlation_id, event_key)`, recordsTable))
 	m := pgledger.Mapping{
 		Runs: pgledger.RunsMap{
 			Table: runsTable, RunID: "correlation_id", Status: "state", Envelope: "payload",
-			Scope:    pgledger.Scope{Column: "source", Value: "duraturo"},
+			Scope:    pgledger.Scope{Column: "source", Value: "anchor"},
 			Defaults: func(r run.Run) map[string]any { return map[string]any{"tenant": "acme"} },
 		},
 		Records: pgledger.RecordsMap{
 			Table: recordsTable, RunID: "correlation_id", Key: "event_key", Envelope: "payload",
-			Scope:    pgledger.Scope{Column: "source", Value: "duraturo"},
+			Scope:    pgledger.Scope{Column: "source", Value: "anchor"},
 			Defaults: func(rec run.Record) map[string]any { return map[string]any{"tenant": "acme"} },
 		},
 	}

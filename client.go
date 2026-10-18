@@ -1,4 +1,4 @@
-package duraturo
+package anchor
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/urmzd/duraturo/pkg/ledger"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/ledger"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // Client submits runs and observes them. It is the producer side of the two
@@ -33,7 +33,7 @@ func WithCodec(c run.Codec) ClientOption { return func(cl *Client) { cl.codec = 
 // set their own (default 5).
 func WithDefaultMaxAttempts(n int) ClientOption { return func(cl *Client) { cl.maxAttempts = n } }
 
-// New composes a duraturo client from any Ledger and Queue implementation.
+// New composes a anchor client from any Ledger and Queue implementation.
 // Nothing is created, nothing is migrated: the implementations own storage.
 func New(lgr ledger.Ledger, q queue.Queue, opts ...ClientOption) *Client {
 	c := &Client{lgr: lgr, q: q, codec: run.JSONCodec{}, maxAttempts: 5}
@@ -78,7 +78,7 @@ func Start[I, O any](ctx context.Context, c *Client, a *ActivityFn[I, O], in I, 
 	}
 	input, err := c.codec.Marshal(in)
 	if err != nil {
-		return nil, fmt.Errorf("duraturo: marshal input for %q: %w", a.Name(), err)
+		return nil, fmt.Errorf("anchor: marshal input for %q: %w", a.Name(), err)
 	}
 	id := cfg.runID
 	if id == "" {
@@ -94,14 +94,14 @@ func Start[I, O any](ctx context.Context, c *Client, a *ActivityFn[I, O], in I, 
 		CreatedAt:   time.Now(),
 	}
 	if err := c.lgr.Accept(ctx, r); err != nil {
-		return nil, fmt.Errorf("duraturo: accept %s: %w", id, err)
+		return nil, fmt.Errorf("anchor: accept %s: %w", id, err)
 	}
 	if err := c.q.Enqueue(ctx, id, 0); err != nil {
 		// Degraded ack: the run is durable in the ledger and the janitor
 		// will re-enqueue it even if the caller never retries — so the
 		// handle is returned ALONGSIDE the error. Dropping it would strand
 		// the caller without the run ID of a run that will execute.
-		return &Handle[O]{c: c, id: id}, fmt.Errorf("duraturo: enqueue %s (run is accepted; janitor will recover): %w", id, err)
+		return &Handle[O]{c: c, id: id}, fmt.Errorf("anchor: enqueue %s (run is accepted; janitor will recover): %w", id, err)
 	}
 	return &Handle[O]{c: c, id: id}, nil
 }
@@ -149,7 +149,7 @@ func (h *Handle[O]) Result(ctx context.Context) (O, error) {
 	for {
 		r, err := getRun(ctx)
 		if err != nil {
-			return zero, fmt.Errorf("duraturo: result %s: %w", h.id, err)
+			return zero, fmt.Errorf("anchor: result %s: %w", h.id, err)
 		}
 		switch r.Status {
 		case run.StatusSucceeded:
@@ -178,11 +178,11 @@ func (h *Handle[O]) Result(ctx context.Context) (O, error) {
 func (c *Client) Signal(ctx context.Context, runID, name string, payload any) error {
 	b, err := c.codec.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("duraturo: marshal signal %q: %w", name, err)
+		return fmt.Errorf("anchor: marshal signal %q: %w", name, err)
 	}
 	_, records, err := c.lgr.Load(ctx, runID)
 	if err != nil {
-		return fmt.Errorf("duraturo: signal %q: %w", name, err)
+		return fmt.Errorf("anchor: signal %q: %w", name, err)
 	}
 	taken := make(map[string]bool, len(records))
 	for _, rec := range records {
@@ -201,12 +201,12 @@ func (c *Client) Signal(ctx context.Context, runID, name string, payload any) er
 			continue // lost a race for this occurrence; take the next
 		}
 		if rerr != nil {
-			return fmt.Errorf("duraturo: signal %q: %w", name, rerr)
+			return fmt.Errorf("anchor: signal %q: %w", name, rerr)
 		}
 		break
 	}
 	if err := c.q.Enqueue(ctx, runID, 0); err != nil {
-		return fmt.Errorf("duraturo: signal %q enqueue (event is recorded; janitor will recover): %w", name, err)
+		return fmt.Errorf("anchor: signal %q enqueue (event is recorded; janitor will recover): %w", name, err)
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func (c *Client) Signal(ctx context.Context, runID, name string, payload any) er
 func (c *Client) Watch(ctx context.Context, runID string, from queue.Cursor) (queue.Stream, error) {
 	dl, ok := c.q.(queue.DeltaLog)
 	if !ok {
-		return nil, errors.New("duraturo: queue backend has no delta log capability")
+		return nil, errors.New("anchor: queue backend has no delta log capability")
 	}
 	return dl.Watch(ctx, runID, from)
 }

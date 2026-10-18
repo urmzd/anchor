@@ -13,27 +13,27 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/urmzd/duraturo/adapters/redis/redisqueue"
-	"github.com/urmzd/duraturo/pkg/queue"
-	"github.com/urmzd/duraturo/pkg/queue/queuetest"
+	"github.com/urmzd/anchor/adapters/redis/redisqueue"
+	"github.com/urmzd/anchor/pkg/queue"
+	"github.com/urmzd/anchor/pkg/queue/queuetest"
 )
 
 // nsCounter disambiguates namespaces created within the same nanosecond.
 var nsCounter atomic.Int64
 
 // newQueue returns a Queue in a fresh namespace against the Redis at
-// DURATURO_REDIS_ADDR (default localhost:6379), with cleanup that deletes
+// ANCHOR_REDIS_ADDR (default localhost:6379), with cleanup that deletes
 // only that namespace's keys — no FlushDB, so parallel suites coexist.
 func newQueue(t *testing.T) *redisqueue.Queue {
 	t.Helper()
 
-	addr := os.Getenv("DURATURO_REDIS_ADDR")
+	addr := os.Getenv("ANCHOR_REDIS_ADDR")
 	if addr == "" {
 		addr = "localhost:6379"
 	}
 	client := redis.NewClient(&redis.Options{Addr: addr})
 	if err := client.Ping(context.Background()).Err(); err != nil {
-		t.Fatalf("redis at %s not reachable (set DURATURO_REDIS_ADDR or start docker compose redis): %v", addr, err)
+		t.Fatalf("redis at %s not reachable (set ANCHOR_REDIS_ADDR or start docker compose redis): %v", addr, err)
 	}
 
 	ns := fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), nsCounter.Add(1))

@@ -12,8 +12,8 @@
 ## Getting Started
 
 ```sh
-git clone https://github.com/urmzd/duraturo
-cd duraturo
+git clone https://github.com/urmzd/anchor
+cd anchor
 make init
 ```
 

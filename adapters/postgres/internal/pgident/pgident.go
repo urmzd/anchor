@@ -30,7 +30,7 @@ func Column(field, name string) error {
 		return fmt.Errorf("%s is required", field)
 	}
 	if !part.MatchString(name) {
-		return fmt.Errorf("%s: unsafe identifier %q: duraturo mappings use lower_snake_case identifiers (must match ^[a-z_][a-z0-9_]*$)", field, name)
+		return fmt.Errorf("%s: unsafe identifier %q: anchor mappings use lower_snake_case identifiers (must match ^[a-z_][a-z0-9_]*$)", field, name)
 	}
 	return nil
 }
@@ -47,7 +47,7 @@ func Table(field, name string) error {
 	}
 	for _, p := range parts {
 		if !part.MatchString(p) {
-			return fmt.Errorf("%s: unsafe identifier %q: duraturo mappings use lower_snake_case identifiers (each part must match ^[a-z_][a-z0-9_]*$)", field, name)
+			return fmt.Errorf("%s: unsafe identifier %q: anchor mappings use lower_snake_case identifiers (each part must match ^[a-z_][a-z0-9_]*$)", field, name)
 		}
 	}
 	return nil

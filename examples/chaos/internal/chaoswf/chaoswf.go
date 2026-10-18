@@ -3,7 +3,7 @@
 // its name into the output and emitting a progress delta.
 //
 // Every activity also appends one row to the chaos_effects table through a
-// plain pgxpool — raw SQL, not duraturo. That table is the ledger-external
+// plain pgxpool — raw SQL, not anchor. That table is the ledger-external
 // witness of side effects: the kill test reads it to prove that recorded
 // activities never re-executed across a real process death.
 package chaoswf
@@ -16,11 +16,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	duraturo "github.com/urmzd/duraturo"
+	anchor "github.com/urmzd/anchor"
 )
 
 // EffectsDDL creates the witness table. It belongs to the example, not to
-// duraturo; the worker binary creates it on startup and the kill test resets
+// anchor; the worker binary creates it on startup and the kill test resets
 // it.
 const EffectsDDL = `CREATE TABLE IF NOT EXISTS chaos_effects (
 	run_id   text        NOT NULL,
@@ -46,12 +46,12 @@ func Expected(seed string) string {
 	return out
 }
 
-var stages = []*duraturo.ActivityFn[string, string]{
+var stages = []*anchor.ActivityFn[string, string]{
 	stage(1), stage(2), stage(3), stage(4),
 }
 
 // Process is the chaos workflow entry point.
-var Process = duraturo.Activity("chaos-process", process)
+var Process = anchor.Activity("chaos-process", process)
 
 func process(ctx context.Context, in string) (string, error) {
 	out := in
@@ -60,7 +60,7 @@ func process(ctx context.Context, in string) (string, error) {
 		if out, err = s.Call(ctx, out); err != nil {
 			return "", err
 		}
-		_ = duraturo.Emit(ctx, delta{Stage: StageNames[i], Value: out})
+		_ = anchor.Emit(ctx, delta{Stage: StageNames[i], Value: out})
 	}
 	return out, nil
 }
@@ -73,10 +73,10 @@ type delta struct {
 // stage builds activity "stage-<n>". Its sleep comes from the
 // CHAOS_SLEEP_STAGE_<n> env var (a Go duration, read at process start), so
 // the kill test can hold one stage mid-flight while it aims the SIGKILL.
-func stage(n int) *duraturo.ActivityFn[string, string] {
+func stage(n int) *anchor.ActivityFn[string, string] {
 	name := fmt.Sprintf("stage-%d", n)
 	sleep, _ := time.ParseDuration(os.Getenv(fmt.Sprintf("CHAOS_SLEEP_STAGE_%d", n)))
-	return duraturo.Activity(name, func(ctx context.Context, in string) (string, error) {
+	return anchor.Activity(name, func(ctx context.Context, in string) (string, error) {
 		// Witness first, then sleep: a kill mid-sleep still leaves the row —
 		// the side effect happened even though no record was written.
 		if err := witness(ctx, name); err != nil {
@@ -93,12 +93,12 @@ func stage(n int) *duraturo.ActivityFn[string, string] {
 	})
 }
 
-// witness appends one invocation row, outside duraturo entirely.
+// witness appends one invocation row, outside anchor entirely.
 func witness(ctx context.Context, activity string) error {
 	if Effects == nil {
 		return nil
 	}
-	info, _ := duraturo.FromContext(ctx)
+	info, _ := anchor.FromContext(ctx)
 	_, err := Effects.Exec(ctx,
 		`INSERT INTO chaos_effects (run_id, activity) VALUES ($1, $2)`,
 		info.RunID, activity)

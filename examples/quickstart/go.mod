@@ -1,13 +1,13 @@
-module github.com/urmzd/duraturo/examples/quickstart
+module github.com/urmzd/anchor/examples/quickstart
 
 go 1.26.4
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/redis/go-redis/v9 v9.21.0
-	github.com/urmzd/duraturo v0.1.0
-	github.com/urmzd/duraturo/adapters/postgres v0.0.0
-	github.com/urmzd/duraturo/adapters/redis v0.0.0
+	github.com/urmzd/anchor v0.2.0
+	github.com/urmzd/anchor/adapters/postgres v0.0.0
+	github.com/urmzd/anchor/adapters/redis v0.0.0
 )
 
 require (
@@ -22,7 +22,7 @@ require (
 )
 
 replace (
-	github.com/urmzd/duraturo => ../..
-	github.com/urmzd/duraturo/adapters/postgres => ../../adapters/postgres
-	github.com/urmzd/duraturo/adapters/redis => ../../adapters/redis
+	github.com/urmzd/anchor => ../..
+	github.com/urmzd/anchor/adapters/postgres => ../../adapters/postgres
+	github.com/urmzd/anchor/adapters/redis => ../../adapters/redis
 )

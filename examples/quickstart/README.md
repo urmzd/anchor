@@ -7,4 +7,4 @@ docker compose up -d --wait   # from the repo root; the init hook applies schema
 go run .
 ```
 
-`schema.sql` is the suggested DDL from `pgledger.RecommendedDDL` and `pgqueue.RecommendedDDL` — applied by Postgres's own init hook, never by duraturo.
+`schema.sql` is the suggested DDL from `pgledger.RecommendedDDL` and `pgqueue.RecommendedDDL` — applied by Postgres's own init hook, never by anchor.

@@ -1,17 +1,17 @@
-package duraturo
+package anchor
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/urmzd/duraturo/pkg/replay"
-	"github.com/urmzd/duraturo/pkg/run"
+	"github.com/urmzd/anchor/pkg/replay"
+	"github.com/urmzd/anchor/pkg/run"
 )
 
 // ActivityFn is a durable function handle. Declare once at package level —
 // the Go analogue of a decorator:
 //
-//	var ChargePayment = duraturo.Activity("charge-payment", chargePayment)
+//	var ChargePayment = anchor.Activity("charge-payment", chargePayment)
 //
 // The name is the correlation contract: records belong to it, releases roll
 // forward against it, and a breaking input/output change means a new name
@@ -56,12 +56,12 @@ func (a *ActivityFn[I, O]) call(ctx context.Context, key string, in I) (O, error
 	var zero O
 	f, ok := replay.FromContext(ctx)
 	if !ok {
-		return a.fn(ctx, in) // pass-through: not under duraturo
+		return a.fn(ctx, in) // pass-through: not under anchor
 	}
 	codec := f.Codec()
 	inB, err := codec.Marshal(in)
 	if err != nil {
-		return zero, fmt.Errorf("duraturo: marshal input for %q: %w", a.name, err)
+		return zero, fmt.Errorf("anchor: marshal input for %q: %w", a.name, err)
 	}
 	outB, err := f.Do(ctx, run.KindActivity, a.name, key, inB, func(ctx context.Context) ([]byte, error) {
 		out, err := a.fn(ctx, in)
@@ -70,7 +70,7 @@ func (a *ActivityFn[I, O]) call(ctx context.Context, key string, in I) (O, error
 		}
 		b, merr := codec.Marshal(out)
 		if merr != nil {
-			return nil, run.NonRetryable(fmt.Errorf("duraturo: marshal output for %q: %w", a.name, merr))
+			return nil, run.NonRetryable(fmt.Errorf("anchor: marshal output for %q: %w", a.name, merr))
 		}
 		return b, nil
 	})
@@ -103,7 +103,7 @@ func (a *ActivityFn[I, O]) erased(ctx context.Context, input []byte) ([]byte, er
 	}
 	b, err := codec.Marshal(out)
 	if err != nil {
-		return nil, run.NonRetryable(fmt.Errorf("duraturo: marshal output for %q: %w", a.name, err))
+		return nil, run.NonRetryable(fmt.Errorf("anchor: marshal output for %q: %w", a.name, err))
 	}
 	return b, nil
 }
