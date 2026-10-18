@@ -21,10 +21,13 @@
 // Retention of settled rows is the caller's policy, exercised with their own
 // tooling.
 //
-// This adapter does not implement queue.DeltaLog in v1: streaming is the
-// Redis adapter's domain, and anchor's Emit degrades to a no-op when the
-// queue offers no delta log. Losing deltas loses observability history,
-// never correctness.
+// Streaming: a Queue from New has no delta log, so anchor's Emit is a no-op
+// and Client.Watch errors. NewDeltaQueue adds the queue.DeltaLog capability
+// on a second, append-only table (DeltaMapping; RecommendedDeltaDDL
+// suggests one): appends are fenced against the queue's attempt counter,
+// and watchers are woken by LISTEN/NOTIFY with a poll fallback, so a
+// Postgres-only deployment streams without Redis. Deltas are advisory flow:
+// losing them loses observability history, never correctness.
 package pgqueue
 
 import (
