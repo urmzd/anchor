@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	anchor "github.com/urmzd/anchor"
+	"github.com/urmzd/anchor/adapters/postgres/pgkit"
 	"github.com/urmzd/anchor/adapters/postgres/pgledger"
 	"github.com/urmzd/anchor/adapters/postgres/pgqueue"
 	"github.com/urmzd/anchor/pkg/queue"
@@ -168,6 +169,73 @@ func TestDeltaLogWatchWakesByNotify(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("live append not delivered within 3s with a 1m poll: NOTIFY wake-up is broken")
+	}
+}
+
+// TestDeltaQueuesShareOneListener: two queues on different channels share
+// one pgkit.Listener, so one connection wakes both, with a poll long enough
+// that only NOTIFY can deliver in time.
+func TestDeltaQueuesShareOneListener(t *testing.T) {
+	pool := testPool(t)
+	l, err := pgkit.NewListener(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var queues []*pgqueue.DeltaQueue
+	var streams []queue.Stream
+	for range 2 {
+		m := pgqueue.DefaultMapping()
+		m.Table = uniqueName("dt_dl_shared")
+		dm := pgqueue.DefaultDeltaMapping()
+		dm.Table = m.Table + "_delta"
+		dm.Channel = m.Table + "_delta"
+		applyDDL(t, pool, pgqueue.RecommendedDDL(m))
+		applyDDL(t, pool, pgqueue.RecommendedDeltaDDL(dm))
+		dropTables(t, pool, m.Table, dm.Table)
+		q, err := pgqueue.NewDeltaQueue(pool, m, dm, pgqueue.WithPollInterval(time.Minute), pgqueue.WithListener(l))
+		if err != nil {
+			t.Fatalf("NewDeltaQueue: %v", err)
+		}
+		s, err := q.Watch(ctx, "r1", "")
+		if err != nil {
+			t.Fatalf("Watch: %v", err)
+		}
+		queues, streams = append(queues, q), append(streams, s)
+	}
+
+	// The first Recv of each stream finds nothing and waits on the shared
+	// subscription; give the listener time to LISTEN both channels.
+	got := make(chan string, 2)
+	for i, s := range streams {
+		go func() {
+			d, _, err := s.Recv(ctx)
+			if err != nil {
+				got <- fmt.Sprintf("stream %d: %v", i, err)
+				return
+			}
+			got <- string(d.Payload)
+		}()
+	}
+	time.Sleep(300 * time.Millisecond)
+	for i, q := range queues {
+		if err := q.Append(ctx, run.Delta{RunID: "r1", Attempt: 1, Kind: run.DeltaUser, Payload: []byte(fmt.Sprintf("q%d", i))}); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+	}
+	seen := map[string]bool{}
+	for range 2 {
+		select {
+		case p := <-got:
+			seen[p] = true
+		case <-time.After(3 * time.Second):
+			t.Fatalf("live appends not delivered within 3s with a 1m poll (got %v): the shared listener is not waking", seen)
+		}
+	}
+	if !seen["q0"] || !seen["q1"] {
+		t.Fatalf("deliveries = %v, want q0 and q1", seen)
 	}
 }
 

@@ -25,9 +25,10 @@
 // and Client.Watch errors. NewDeltaQueue adds the queue.DeltaLog capability
 // on a second, append-only table (DeltaMapping; RecommendedDeltaDDL
 // suggests one): appends are fenced against the queue's attempt counter,
-// and watchers are woken by LISTEN/NOTIFY with a poll fallback, so a
-// Postgres-only deployment streams without Redis. Deltas are advisory flow:
-// losing them loses observability history, never correctness.
+// and watchers are woken by LISTEN/NOTIFY through a pgkit.Listener, with a
+// poll fallback, so a Postgres-only deployment streams without Redis.
+// Deltas are advisory flow: losing them loses observability history, never
+// correctness.
 package pgqueue
 
 import (
@@ -43,6 +44,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/adapters/postgres/pgkit"
 	"github.com/urmzd/anchor/pkg/queue"
 	"github.com/urmzd/anchor/pkg/run"
 )
@@ -117,12 +119,27 @@ func WithPollInterval(d time.Duration) Option {
 	}
 }
 
+// WithListener hands a DeltaQueue the pgkit.Listener its watchers subscribe
+// through, so a process that already has one (shared with other components)
+// holds one LISTEN connection instead of one per user. Without it a
+// DeltaQueue builds its own over the pool. A plain Queue ignores it.
+func WithListener(l *pgkit.Listener) Option {
+	return func(q *Queue) error {
+		if l == nil {
+			return errors.New("pgqueue: listener is nil")
+		}
+		q.listener = l
+		return nil
+	}
+}
+
 // Queue implements queue.Queue on the caller's own PostgreSQL table. Use New
 // to construct one and Validate to check the live schema.
 type Queue struct {
-	pool *pgxpool.Pool
-	m    Mapping
-	poll time.Duration
+	pool     *pgxpool.Pool
+	m        Mapping
+	poll     time.Duration
+	listener *pgkit.Listener
 
 	// Quoted SQL fragments, derived once from the validated mapping.
 	qTable, qID, qReady, qLease, qAttempt, qFailures, qScope string

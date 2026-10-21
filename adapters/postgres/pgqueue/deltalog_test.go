@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/urmzd/anchor/adapters/postgres/pgkit"
 	"github.com/urmzd/anchor/pkg/queue"
 )
 
@@ -24,6 +25,7 @@ func TestNewDeltaQueueValidatesDeltaMapping(t *testing.T) {
 		{"missing payload", func(dm *DeltaMapping) { dm.Payload = "" }, "DeltaMapping.Payload"},
 		{"missing channel", func(dm *DeltaMapping) { dm.Channel = "" }, "DeltaMapping.Channel"},
 		{"unsafe channel", func(dm *DeltaMapping) { dm.Channel = `c"; NOTIFY x; --` }, "unsafe identifier"},
+		{"long channel", func(dm *DeltaMapping) { dm.Channel = strings.Repeat("c", 64) }, "63-byte channel limit"},
 		{"unsafe table", func(dm *DeltaMapping) { dm.Table = "Deltas" }, "lower_snake_case"},
 	}
 	for _, tt := range tests {
@@ -42,6 +44,31 @@ func TestNewDeltaQueueValidatesDeltaMapping(t *testing.T) {
 
 	if _, err := NewDeltaQueue(pool, Mapping{}, DefaultDeltaMapping()); err == nil {
 		t.Fatal("NewDeltaQueue with invalid queue mapping = nil error, want error")
+	}
+}
+
+func TestWithListener(t *testing.T) {
+	pool := lazyPool(t)
+	if _, err := NewDeltaQueue(pool, DefaultMapping(), DefaultDeltaMapping(), WithListener(nil)); err == nil {
+		t.Fatal("WithListener(nil) = nil error, want error")
+	}
+	l, err := pgkit.NewListener(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dq, err := NewDeltaQueue(pool, DefaultMapping(), DefaultDeltaMapping(), WithListener(l))
+	if err != nil {
+		t.Fatalf("NewDeltaQueue with a shared listener: %v", err)
+	}
+	if dq.hub.listener != l {
+		t.Fatal("DeltaQueue did not use the listener it was given")
+	}
+	own, err := NewDeltaQueue(pool, DefaultMapping(), DefaultDeltaMapping())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own.hub.listener == nil || own.hub.listener == l {
+		t.Fatal("a DeltaQueue without WithListener must build its own")
 	}
 }
 
