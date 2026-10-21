@@ -232,6 +232,16 @@ if err := q.Validate(ctx); err != nil {
 - [AGENTS.md](AGENTS.md): AI-facing conventions, commands, extension guide
 - [Contributing](CONTRIBUTING.md): development workflow and commit convention
 
+## Where this sits
+
+anchor is the bottom of five layers (warp, fiber, saige, playscape, anchor):
+durability for everything above it. playscape, saige and fiber build on its
+ledger, queue and worker rather than keeping their own, and its Postgres
+adapter module is where the stack's shared Postgres plumbing (migrations,
+LISTEN/NOTIFY) belongs. It is a library chosen in code: no binary, no
+configuration file. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
+remaining duplication and the stack's limitations in one place.
+
 ## License
 
 [Apache-2.0](LICENSE)
