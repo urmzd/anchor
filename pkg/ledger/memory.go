@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +33,11 @@ type Memory struct {
 	records map[string]map[string]run.Record // run ID → record key → record
 }
 
-var _ Ledger = (*Memory)(nil)
+var (
+	_ Ledger       = (*Memory)(nil)
+	_ RunGetter    = (*Memory)(nil)
+	_ PrefixReader = (*Memory)(nil)
+)
 
 // NewMemory returns an empty in-process ledger.
 func NewMemory() *Memory {
@@ -130,6 +135,26 @@ func (m *Memory) GetRun(ctx context.Context, runID string) (run.Run, error) {
 		return run.Run{}, fmt.Errorf("ledger: get %q: %w", runID, run.ErrNotFound)
 	}
 	return cloneRun(*r), nil
+}
+
+// RecordsWithPrefix implements the PrefixReader capability: deep copies of
+// the run's records whose key starts with one of prefixes, in no particular
+// order.
+func (m *Memory) RecordsWithPrefix(ctx context.Context, runID string, prefixes ...string) ([]run.Record, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	byKey, ok := m.records[runID]
+	if !ok {
+		return nil, fmt.Errorf("ledger: records of %q: %w", runID, run.ErrNotFound)
+	}
+	var out []run.Record
+	for key, rec := range byKey {
+		if slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
+			out = append(out, cloneRecord(rec))
+		}
+	}
+	return out, nil
 }
 
 // ListPending implements Ledger: non-terminal runs created strictly before t,

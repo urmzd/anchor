@@ -136,18 +136,25 @@ func requireColumn(errs *[]error, t pginspect.TableInfo, table, field, col, sugg
 }
 
 // RecommendedDDL returns suggested CREATE statements matching m. It is
-// advice returned as a string, never executed: review it and apply it with
-// your own migration tooling. Existing tables that already satisfy Validate
-// need none of it.
+// advice returned as a string, never executed by this package: review it and
+// apply it with your own migration tooling, or hand it to pgkit.Apply.
+// Existing tables that already satisfy Validate need none of it.
+//
+// Run IDs and record keys are COLLATE "C": they are opaque byte strings, the
+// janitor pages pending runs in (created_at, run_id) order, and prefix reads
+// scan record keys, so they compare bytewise exactly as Go compares strings
+// (and as the in-memory ledger orders them) instead of by a locale's rules.
+// Validate accepts any collation; only ordering, not correctness, depends on
+// it.
 func RecommendedDDL(m Mapping) string {
 	return runsDDL(m.Runs) + "\n" + recordsDDL(m.Records)
 }
 
 func runsDDL(r RunsMap) string {
 	var b strings.Builder
-	b.WriteString("-- Runs table for pgledger. Suggested only: anchor never executes DDL.\n")
+	b.WriteString("-- Runs table for pgledger. Suggested only: pgledger never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(r.Table))
-	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.RunID))
+	fmt.Fprintf(&b, "    %s text COLLATE \"C\" NOT NULL,\n", pgident.QuoteColumn(r.RunID))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.Status))
 	fmt.Fprintf(&b, "    %s jsonb NOT NULL", pgident.QuoteColumn(r.Envelope))
 	if r.CreatedAt != "" {
@@ -161,9 +168,11 @@ func runsDDL(r RunsMap) string {
 		pgident.QuoteColumn(indexName(r.Table, r.RunID, "key")),
 		pgident.QuoteTable(r.Table), pgident.QuoteColumn(r.RunID))
 	if r.CreatedAt != "" {
-		fmt.Fprintf(&b, "CREATE INDEX IF NOT EXISTS %s ON %s (%s, %s);\n",
+		// The janitor's whole scan: status equality, then the
+		// (created_at, run_id) order and cursor, served by the index.
+		fmt.Fprintf(&b, "CREATE INDEX IF NOT EXISTS %s ON %s (%s, %s, %s);\n",
 			pgident.QuoteColumn(indexName(r.Table, "pending", "idx")),
-			pgident.QuoteTable(r.Table), pgident.QuoteColumn(r.Status), pgident.QuoteColumn(r.CreatedAt))
+			pgident.QuoteTable(r.Table), pgident.QuoteColumn(r.Status), pgident.QuoteColumn(r.CreatedAt), pgident.QuoteColumn(r.RunID))
 	} else {
 		fmt.Fprintf(&b, "CREATE INDEX IF NOT EXISTS %s ON %s (%s);\n",
 			pgident.QuoteColumn(indexName(r.Table, "pending", "idx")),
@@ -174,10 +183,10 @@ func runsDDL(r RunsMap) string {
 
 func recordsDDL(r RecordsMap) string {
 	var b strings.Builder
-	b.WriteString("-- Records table for pgledger. Suggested only: anchor never executes DDL.\n")
+	b.WriteString("-- Records table for pgledger. Suggested only: pgledger never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(r.Table))
-	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.RunID))
-	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(r.Key))
+	fmt.Fprintf(&b, "    %s text COLLATE \"C\" NOT NULL,\n", pgident.QuoteColumn(r.RunID))
+	fmt.Fprintf(&b, "    %s text COLLATE \"C\" NOT NULL,\n", pgident.QuoteColumn(r.Key))
 	fmt.Fprintf(&b, "    %s jsonb NOT NULL", pgident.QuoteColumn(r.Envelope))
 	if r.Scope.Column != "" {
 		fmt.Fprintf(&b, ",\n    %s text NOT NULL", pgident.QuoteColumn(r.Scope.Column))

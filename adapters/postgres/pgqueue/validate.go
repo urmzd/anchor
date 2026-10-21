@@ -72,13 +72,15 @@ func (q *Queue) Validate(ctx context.Context) error {
 }
 
 // RecommendedDDL returns suggested CREATE statements matching m. It is
-// advice returned as a string, never executed: review it and apply it with
-// your own migration tooling.
+// advice returned as a string, never executed by this package: review it and
+// apply it with your own migration tooling, or hand it to pgkit.Apply. The
+// run ID is COLLATE "C", byte-ordered like every anchor key (see
+// pgledger.RecommendedDDL).
 func RecommendedDDL(m Mapping) string {
 	var b strings.Builder
-	b.WriteString("-- Queue table for pgqueue. Suggested only: anchor never executes DDL.\n")
+	b.WriteString("-- Queue table for pgqueue. Suggested only: pgqueue never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(m.Table))
-	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(m.RunID))
+	fmt.Fprintf(&b, "    %s text COLLATE \"C\" NOT NULL,\n", pgident.QuoteColumn(m.RunID))
 	fmt.Fprintf(&b, "    %s timestamptz,\n", pgident.QuoteColumn(m.ReadyAt))
 	fmt.Fprintf(&b, "    %s timestamptz,\n", pgident.QuoteColumn(m.LeaseUntil))
 	fmt.Fprintf(&b, "    %s bigint NOT NULL DEFAULT 0,\n", pgident.QuoteColumn(m.Attempt))
@@ -167,13 +169,13 @@ func (d *DeltaQueue) validateDeltaTable(ctx context.Context) error {
 
 // RecommendedDeltaDDL returns suggested CREATE statements for the delta
 // table described by dm. Like RecommendedDDL it is advice returned as a
-// string, never executed.
+// string, never executed by this package.
 func RecommendedDeltaDDL(dm DeltaMapping) string {
 	var b strings.Builder
-	b.WriteString("-- Delta log table for pgqueue. Suggested only: anchor never executes DDL.\n")
+	b.WriteString("-- Delta log table for pgqueue. Suggested only: pgqueue never executes DDL.\n")
 	fmt.Fprintf(&b, "CREATE TABLE IF NOT EXISTS %s (\n", pgident.QuoteTable(dm.Table))
 	fmt.Fprintf(&b, "    %s bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n", pgident.QuoteColumn(dm.Seq))
-	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(dm.RunID))
+	fmt.Fprintf(&b, "    %s text COLLATE \"C\" NOT NULL,\n", pgident.QuoteColumn(dm.RunID))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(dm.RecordKey))
 	fmt.Fprintf(&b, "    %s bigint NOT NULL,\n", pgident.QuoteColumn(dm.Attempt))
 	fmt.Fprintf(&b, "    %s text NOT NULL,\n", pgident.QuoteColumn(dm.Kind))

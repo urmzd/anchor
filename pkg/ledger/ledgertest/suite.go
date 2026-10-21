@@ -9,7 +9,9 @@
 //	}
 //
 // The factory is called once per subtest and must return an empty ledger;
-// register any teardown on the provided *testing.T.
+// register any teardown on the provided *testing.T. Optional capabilities
+// the ledger implements (ledger.PrefixReader) are exercised by their own
+// subtests, discovered by type assertion; a ledger without one skips it.
 package ledgertest
 
 import (
@@ -55,6 +57,14 @@ func Run(t *testing.T, factory func(t *testing.T) ledger.Ledger) {
 	})
 	t.Run("mutation isolation", func(t *testing.T) {
 		testMutationIsolation(t, factory(t))
+	})
+	t.Run("records with prefix", func(t *testing.T) {
+		l := factory(t)
+		pr, ok := l.(ledger.PrefixReader)
+		if !ok {
+			t.Skip("ledger does not implement the optional ledger.PrefixReader")
+		}
+		testRecordsWithPrefix(t, l, pr)
 	})
 }
 
@@ -407,6 +417,89 @@ func testMutationIsolation(t *testing.T, l ledger.Ledger) {
 	rec2 := findRecord(t, recs2, "s#0")
 	if !bytes.Equal(rec2.Output, []byte("output-0")) {
 		t.Errorf("mutating a loaded record leaked into the store: got %q, want %q", rec2.Output, "output-0")
+	}
+}
+
+func testRecordsWithPrefix(t *testing.T, l ledger.Ledger, pr ledger.PrefixReader) {
+	ctx := t.Context()
+	acceptPending(t, l, "r-prefix", time.Now())
+	acceptPending(t, l, "r-neighbor", time.Now())
+	acceptPending(t, l, "r-empty", time.Now())
+	keys := []string{
+		"event:approval#0", "event:approval#1", "event:approve#0", "Event:approval#0",
+		"charge#0", "charge#0/refund#0", "100%_done#0", "100x_done#0", `back\slash#0`, "\u00e9moji#0",
+	}
+	for _, key := range keys {
+		if _, err := l.Record(ctx, run.Record{RunID: "r-prefix", Key: key, Kind: run.KindStep, Status: run.RecordOK, Output: []byte(key)}); err != nil {
+			t.Fatalf("Record(%q): %v", key, err)
+		}
+	}
+	// Another run's matching record must never leak into r-prefix's read.
+	if _, err := l.Record(ctx, run.Record{RunID: "r-neighbor", Key: "event:approval#9", Kind: run.KindEvent, Status: run.RecordOK}); err != nil {
+		t.Fatalf("Record on the neighbor: %v", err)
+	}
+
+	read := func(runID string, prefixes ...string) []string {
+		t.Helper()
+		recs, err := pr.RecordsWithPrefix(ctx, runID, prefixes...)
+		if err != nil {
+			t.Fatalf("RecordsWithPrefix(%q, %q): %v", runID, prefixes, err)
+		}
+		got := make([]string, len(recs))
+		for i, rec := range recs {
+			if rec.RunID != runID || string(rec.Output) != rec.Key || rec.Status != run.RecordOK {
+				t.Errorf("RecordsWithPrefix(%q, %q) returned %+v, want the stored record", runID, prefixes, rec)
+			}
+			got[i] = rec.Key
+		}
+		slices.Sort(got)
+		return got
+	}
+	sorted := func(keys ...string) []string {
+		out := slices.Clone(keys)
+		slices.Sort(out)
+		return out
+	}
+
+	for _, tc := range []struct {
+		prefixes []string
+		want     []string
+	}{
+		{[]string{"event:approval#"}, sorted("event:approval#0", "event:approval#1")},
+		{[]string{"event:appro"}, sorted("event:approval#0", "event:approval#1", "event:approve#0")},
+		// A record matching several prefixes comes back once.
+		{[]string{"event:", "event:approval", "event:approval#1"}, sorted("event:approval#0", "event:approval#1", "event:approve#0")},
+		{[]string{"charge#0", "nope"}, sorted("charge#0", "charge#0/refund#0")},
+		// Prefixes are literal: LIKE's wildcards and escape match themselves.
+		{[]string{"100%"}, sorted("100%_done#0")},
+		{[]string{"100_"}, sorted()},
+		{[]string{"100%_"}, sorted("100%_done#0")},
+		{[]string{`back\`}, sorted(`back\slash#0`)},
+		{[]string{"\u00e9mo"}, sorted("\u00e9moji#0")},
+		{[]string{"EVENT:"}, sorted()},
+		{[]string{""}, sorted(keys...)},
+		{nil, sorted()},
+	} {
+		if got := read("r-prefix", tc.prefixes...); !slices.Equal(got, tc.want) {
+			t.Errorf("RecordsWithPrefix(r-prefix, %q) keys = %q, want %q", tc.prefixes, got, tc.want)
+		}
+	}
+	if got := read("r-empty", ""); len(got) != 0 {
+		t.Errorf("RecordsWithPrefix on a run without records = %q, want none", got)
+	}
+	if _, err := pr.RecordsWithPrefix(ctx, "r-missing", "event:"); !errors.Is(err, run.ErrNotFound) {
+		t.Errorf("RecordsWithPrefix on an unknown run: got %v, want run.ErrNotFound", err)
+	}
+
+	// What comes back is the caller's to mutate.
+	recs, err := pr.RecordsWithPrefix(ctx, "r-prefix", "charge#0/")
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("RecordsWithPrefix(charge#0/) = %v, %v; want one record", recs, err)
+	}
+	recs[0].Output[0] = 'X'
+	again, err := pr.RecordsWithPrefix(ctx, "r-prefix", "charge#0/")
+	if err != nil || len(again) != 1 || string(again[0].Output) != "charge#0/refund#0" {
+		t.Errorf("mutating a prefix read leaked into the store: %v, %v", again, err)
 	}
 }
 

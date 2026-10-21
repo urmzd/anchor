@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/urmzd/anchor/adapters/postgres/internal/pgident"
+	"github.com/urmzd/anchor/adapters/postgres/pgkit"
 	"github.com/urmzd/anchor/pkg/queue"
 	"github.com/urmzd/anchor/pkg/run"
 )
@@ -24,6 +24,10 @@ const deltaReadBatch = 64
 // connection is healthy: notifications do the waking, the poll only covers
 // a notification lost between reconnects.
 const listeningPollFactor = 25
+
+// maxChannelLen is the longest channel Postgres keeps (NAMEDATALEN-1 bytes):
+// pg_notify refuses a longer one, which would fail every append.
+const maxChannelLen = 63
 
 // DeltaMapping declares which existing table and columns carry the delta
 // log. All column fields are required.
@@ -44,10 +48,10 @@ type DeltaMapping struct {
 	Kind string
 	// Payload is the bytea column carrying the raw delta payload.
 	Payload string
-	// Channel is the LISTEN/NOTIFY channel that wakes watchers. Appends
-	// NOTIFY it with the run ID as payload; watchers fall back to polling
-	// when the listener connection is unavailable (for example behind a
-	// transaction-pooling proxy).
+	// Channel is the LISTEN/NOTIFY channel that wakes watchers, at most
+	// 63 bytes. Appends NOTIFY it with the run ID as payload; watchers
+	// fall back to polling when the listener connection is unavailable
+	// (for example behind a transaction-pooling proxy).
 	Channel string
 }
 
@@ -81,6 +85,9 @@ func (dm DeltaMapping) validate() error {
 	add(pgident.Column("DeltaMapping.Kind", dm.Kind))
 	add(pgident.Column("DeltaMapping.Payload", dm.Payload))
 	add(pgident.Column("DeltaMapping.Channel", dm.Channel))
+	if len(dm.Channel) > maxChannelLen {
+		errs = append(errs, fmt.Errorf("DeltaMapping.Channel: %q is longer than Postgres's %d-byte channel limit", dm.Channel, maxChannelLen))
+	}
 	return errors.Join(errs...)
 }
 
@@ -98,9 +105,12 @@ func (dm DeltaMapping) validate() error {
 // transaction-scoped advisory lock, so a run's Seq order is also its commit
 // order and a cursor can never skip a late-committing row.
 //
-// Watchers share one LISTEN connection per DeltaQueue, held only while at
-// least one Watch is live; the Watch ctx bounds the subscription. When that
-// connection is unavailable, streams poll at the queue's poll interval.
+// Watchers share one pgkit.Listener subscription on the delta channel, held
+// only while at least one Watch is live; the Watch ctx bounds it. The
+// Listener is the DeltaQueue's own unless WithListener hands it the
+// process's, so one connection carries every component's notifications.
+// When the connection is unavailable, streams poll at the queue's poll
+// interval.
 type DeltaQueue struct {
 	*Queue
 	dm  DeltaMapping
@@ -125,8 +135,14 @@ func NewDeltaQueue(pool *pgxpool.Pool, m Mapping, dm DeltaMapping, opts ...Optio
 	if err := dm.validate(); err != nil {
 		return nil, fmt.Errorf("pgqueue: invalid delta mapping: %w", err)
 	}
+	listener := q.listener
+	if listener == nil {
+		if listener, err = pgkit.NewListener(pool); err != nil {
+			return nil, fmt.Errorf("pgqueue: %w", err)
+		}
+	}
 	d := &DeltaQueue{Queue: q, dm: dm, lockSpace: dm.Table + ":"}
-	d.hub = &deltaHub{pool: pool, listenSQL: "LISTEN " + pgident.QuoteColumn(dm.Channel), retry: q.poll}
+	d.hub = &deltaHub{listener: listener, channel: dm.Channel}
 	d.buildDeltaSQL()
 	return d, nil
 }
@@ -320,7 +336,7 @@ func (s *deltaStream) Recv(ctx context.Context) (run.Delta, queue.Cursor, error)
 		}
 
 		wait := s.d.poll
-		if s.d.hub.listening.Load() {
+		if s.d.hub.listening() {
 			wait *= listeningPollFactor
 		}
 		timer := time.NewTimer(wait)
@@ -351,25 +367,27 @@ func formatCursor(seq int64) queue.Cursor {
 	return queue.Cursor(strconv.FormatInt(seq, 10))
 }
 
-// deltaHub multiplexes one LISTEN connection across every live watcher of a
-// DeltaQueue. The listener runs only while at least one subscription is
-// held, reconnecting after failures; each (re)connect wakes every watcher
-// so a notification lost in the gap costs at most one extra query.
+// deltaHub routes one Listener subscription on the delta channel to the
+// watchers of each run, by the run ID each append notifies with. It holds
+// the subscription only while at least one watcher is subscribed. A Resync
+// (the subscription starting, or the Listener reconnecting) wakes every
+// watcher, so a notification lost in a gap costs at most one extra query.
 type deltaHub struct {
-	pool      *pgxpool.Pool
-	listenSQL string
-	retry     time.Duration
+	listener *pgkit.Listener
+	channel  string
 
-	listening atomic.Bool
-
-	mu     sync.Mutex
-	subs   map[string]map[chan struct{}]struct{}
-	count  int
+	mu    sync.Mutex
+	subs  map[string]map[chan struct{}]struct{}
+	count int
+	// gen names the live subscription; synced reports that it has had
+	// its first Resync, so the channel is being listened to.
+	gen    uint64
+	synced bool
 	cancel context.CancelFunc
 }
 
-// subscribe registers a wake-up channel for runID, starting the listener
-// on the first subscription. The returned func is idempotent.
+// subscribe registers a wake-up channel for runID, subscribing to the
+// Listener on the first one. The returned func is idempotent.
 func (h *deltaHub) subscribe(runID string) (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	h.mu.Lock()
@@ -386,7 +404,13 @@ func (h *deltaHub) subscribe(runID string) (<-chan struct{}, func()) {
 	if h.count == 1 {
 		ctx, cancel := context.WithCancel(context.Background())
 		h.cancel = cancel
-		go h.listen(ctx)
+		h.gen++
+		h.synced = false
+		// The channel was validated with the mapping, so Listen cannot
+		// refuse it; if it ever did, watchers would simply poll.
+		if notes, err := h.listener.Listen(ctx, h.channel); err == nil {
+			go h.route(h.gen, notes)
+		}
 	}
 	h.mu.Unlock()
 
@@ -403,9 +427,37 @@ func (h *deltaHub) subscribe(runID string) (<-chan struct{}, func()) {
 			if h.count == 0 && h.cancel != nil {
 				h.cancel()
 				h.cancel = nil
+				h.gen++
+				h.synced = false
 			}
 		})
 	}
+}
+
+// route turns one subscription's notifications into wake-ups until the
+// subscription ends.
+func (h *deltaHub) route(gen uint64, notes <-chan pgkit.Notification) {
+	for n := range notes {
+		if n.Resync {
+			h.mu.Lock()
+			if h.gen == gen {
+				h.synced = true
+			}
+			h.mu.Unlock()
+			h.wake("", true)
+			continue
+		}
+		h.wake(n.Payload, false)
+	}
+}
+
+// listening reports whether notifications are doing the waking: the
+// subscription has been listened to and the connection is up.
+func (h *deltaHub) listening() bool {
+	h.mu.Lock()
+	synced := h.synced
+	h.mu.Unlock()
+	return synced && h.listener.Listening()
 }
 
 // wake signals runID's watchers, or every watcher when all is true. Sends
@@ -428,41 +480,4 @@ func (h *deltaHub) wake(runID string, all bool) {
 		return
 	}
 	signal(h.subs[runID])
-}
-
-// listen holds a dedicated connection in LISTEN until ctx is done.
-func (h *deltaHub) listen(ctx context.Context) {
-	for ctx.Err() == nil {
-		h.listenOnce(ctx)
-		h.listening.Store(false)
-		select {
-		case <-ctx.Done():
-		case <-time.After(h.retry):
-		}
-	}
-}
-
-func (h *deltaHub) listenOnce(ctx context.Context) {
-	conn, err := h.pool.Acquire(ctx)
-	if err != nil {
-		return
-	}
-	// The connection carries LISTEN state: close it rather than hand it
-	// back to the pool (Release destroys a closed connection).
-	defer func() {
-		_ = conn.Conn().Close(context.Background())
-		conn.Release()
-	}()
-	if _, err := conn.Exec(ctx, h.listenSQL); err != nil {
-		return
-	}
-	h.listening.Store(true)
-	h.wake("", true)
-	for {
-		n, err := conn.Conn().WaitForNotification(ctx)
-		if err != nil {
-			return
-		}
-		h.wake(n.Payload, false)
-	}
 }
