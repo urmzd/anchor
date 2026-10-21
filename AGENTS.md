@@ -1,6 +1,6 @@
 # anchor
 
-Beta durable-execution framework for existing Go code: wrap functions with `Activity`/`Step`/`Event`, run a worker, and code survives crashes by replaying from the ledger. Go module `github.com/urmzd/anchor`; a library, no binary.
+Beta durable-execution framework for existing Go code: wrap functions with `Activity`/`Step`/`Event`, run a worker, and code survives crashes by replaying from the ledger. Go module `github.com/urmzd/anchor`; a library, whose one binary is `anchor`, a read-only ledger inspector in `adapters/postgres/cmd/anchor`.
 
 ## Architecture
 
@@ -13,6 +13,7 @@ Three concepts only: ledgers (durable truth), queues (flow and clock), workers (
 - The root package is the SDK (`Activity`/`Step`/`Event`/`Emit`, `Client`, `Start`/`Exec`). It imports only `pkg/*` interfaces and `pkg/replay`, never `pkg/worker` and never adapters.
 - `adapters/postgres` (pgx) and `adapters/redis` (go-redis) are separate `go.mod` modules, imported only by `examples/` and user code. The root module has zero third-party dependencies.
 - `adapters/postgres/pgkit` is the stack's shared Postgres plumbing, so the layers above stop hand-rolling it: `Apply(ctx, db, name, steps...)` runs idempotent steps in one transaction under an advisory lock derived from `name`, and `Listener` carries LISTEN/NOTIFY for a process over one dedicated connection (per-channel subscriptions on Go channels, reconnect with backoff, a `Resync` message whenever notifications may have been missed). `pgqueue`'s delta log listens through it (`pgqueue.WithListener` shares one).
+- `adapters/postgres/cmd/anchor` is the read-only ledger inspector (`runs`, `show`, `replay`), in the adapter module so the root keeps zero dependencies. `replay` plays a run's recorded calls into a `replay.Frame` whose ledger refuses every write, to report the frontier without the workflow code. It reads through `pgledger` (`ListRuns` is an adapter method for it, not a ledger capability) after `Validate`, over connections opened with `default_transaction_read_only` on.
 - Generics stop at the root: `pkg/run.Registry` carries type-erased `run.WorkflowFn` (bytes in, bytes out), so `pkg/worker` never sees a type parameter.
 
 Full guide: `docs/architecture/overview.md`. Discover layout with `tree` or ripgrep; do not trust stale listings.
@@ -29,6 +30,7 @@ Full guide: `docs/architecture/overview.md`. Discover layout with `tree` or ripg
 | quality gate | `make check` |
 | integration | `make test-integration` (docker compose + `-tags=integration`); against another Postgres: `ANCHOR_POSTGRES_URL=postgres://... go test -tags=integration ./...` in `adapters/postgres` |
 | demo | `make demo` (compose up + quickstart example) |
+| inspect a ledger | `cd adapters/postgres && go run ./cmd/anchor replay RUN` (URL from `-db` or `ANCHOR_DATABASE_URL`; also `runs`, `show`, `-json`) |
 | one module | `cd adapters/postgres && go test ./...` (same for `adapters/redis`, `examples/*`) |
 
 ## Code Style
@@ -50,6 +52,7 @@ Full guide: `docs/architecture/overview.md`. Discover layout with `tree` or ripg
 - Attempt lineage must survive `Settle`: a settled-and-re-enqueued run (a parked run resuming) claims at attempt N+1, never a reset, or a zombie holding the old attempt would pass the fence.
 - Attempt and Failures are separate counters and must stay that way: Attempt is the fencing token (increments on every claim), Failures is the retry budget (moves only on `Release(..., failed=true)` or an expiry reclaim). Settle-and-re-enqueue never touches Failures; waiting is free, and `Run.MaxAttempts` bounds failures, never claims.
 - Record identity is load-bearing: keys are `name#occurrence`, scoped under the executing parent's key for nested calls (activities are the ABI). A breaking input/output change is a new name, never a mutation of what an existing name means.
+- The `anchor` command only reads: keep its connections read-only, its replay frame's ledger write-refusing, and the database URL out of every output (errors and `-h` included). A command that writes or repairs is a design decision, not an addition.
 - This is a beta: keep the surface small, document limitations honestly (README beta note, overview roadmap) rather than papering over them.
 
 ## Releases

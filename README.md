@@ -238,6 +238,38 @@ for n := range notes {
 q, err := pgqueue.NewDeltaQueue(pool, qm, dm, pgqueue.WithListener(l))
 ```
 
+## Inspect a Ledger
+
+`anchor`, a command in the Postgres adapter module (`adapters/postgres/cmd/anchor`), validates a ledger from the outside: it lists runs, shows one with its records, and replays one without side effects to report where a worker would resume it. It only reads, and it checks the tables with `Validate` before it reads anything.
+
+```sh
+cd adapters/postgres && go build -o bin/anchor ./cmd/anchor
+export ANCHOR_DATABASE_URL=postgres://anchor:anchor@localhost:5432/anchor   # or pass -db on each command
+
+bin/anchor runs -status pending -limit 20   # newest first; -status pending|succeeded|failed
+bin/anchor show order-1042                  # the run, its records in recorded order, its status
+bin/anchor replay order-1042                # where a worker would resume, or that the run is complete
+```
+
+```text
+$ bin/anchor replay order-1042
+run order-1042 (process-order), pending, 2 records
+
+replayed from the ledger, nothing executed:
+  charge-payment#0     activity  recorded
+  reserve-inventory#0  activity  recorded
+
+resume: the next call after reserve-inventory#0 executes for real, or parks the run if it awaits an event
+```
+
+`replay` has no workflow code, so it plays the recorded calls themselves into the `replay.Frame` a worker builds, handing the frame a ledger that refuses every write, and reports what the frame does: a complete run (a worker settles it without replaying), a resume after the last recorded call, a skipped occurrence that would execute for real (`charge-payment#0` missing while `charge-payment#1` is recorded), a parent whose own record is missing and whose body would re-execute around its recorded calls (the worker died inside it), or a park at an event with no record. It checks what the ledger alone can show: every key derives from its record's kind, name and occurrence; every record carries the codec content type your workers use (`-codec`, default `application/json`); activity records carry an input hash. It cannot compare input hashes with live inputs, which only your code computes, so a changed input shows up at the worker, not here.
+
+- `-json` prints machine output. Payloads that are JSON appear as JSON under `input` and `output`; other bytes appear base64-encoded under `input_base64` and `output_base64`.
+- Exit codes: 0 ok, 1 the command failed (connection, schema, unknown run), 2 usage, 3 `replay` found a divergence a worker would fail the run on, or a record no call could have produced.
+- The URL comes from `-db` or `ANCHOR_DATABASE_URL` and is never printed, not in errors and not in `-h`. Connections open with `default_transaction_read_only` on, so the server refuses any write.
+- Tables: `-runs-table` and `-records-table` point at `DefaultMapping`-shaped tables under other names (fiber's are `fiber_runs` and `fiber_run_records`). Other column mappings are not supported by the command; in code, `pgledger.Ledger.ListRuns`, `GetRun` and `Load` read any mapping.
+- Build it from a checkout: the adapter module's `go.mod` keeps a `replace` for in-repo development, which `go install ...@version` refuses.
+
 ## Concepts
 
 | Concept | What it is |
@@ -267,7 +299,8 @@ durability for everything above it. playscape, saige and fiber build on its
 ledger, queue and worker rather than keeping their own, and its Postgres
 adapter module holds the stack's shared Postgres plumbing (`pgkit`:
 advisory-locked migrations and LISTEN/NOTIFY). It is a library chosen in
-code: no binary, no configuration file. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
+code, with no configuration file; its one binary, `anchor`, only reads a
+ledger to validate it. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
 remaining duplication and the stack's limitations in one place.
 
 ## License
