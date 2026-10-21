@@ -551,3 +551,140 @@ CREATE UNIQUE INDEX ON %[2]s (run_id, record_key)`, runsTable, recsTable))
 		t.Fatalf("RecordsWithPrefix on another scope's run = %v, want run.ErrNotFound", err)
 	}
 }
+
+// TestListRuns: newest first, filtered by status, bounded by limit, and
+// without the Input and Output payloads, which a listing never reads.
+func TestListRuns(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	l := newDefaultLedger(t, pool).(*pgledger.Ledger)
+
+	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	for i, id := range []string{"r-a", "r-b", "r-c", "r-d"} {
+		r := run.Run{
+			ID: id, Name: "wf", Input: []byte(`{"n":1}`), Status: run.StatusPending,
+			MaxAttempts: 3, CreatedAt: base.Add(time.Duration(i) * time.Minute),
+		}
+		if err := l.Accept(ctx, r); err != nil {
+			t.Fatalf("Accept %s: %v", id, err)
+		}
+	}
+	if err := l.Complete(ctx, "r-b", 2, run.Result{Status: run.StatusSucceeded, Output: []byte(`"ok"`)}); err != nil {
+		t.Fatalf("Complete r-b: %v", err)
+	}
+	if err := l.Complete(ctx, "r-c", 1, run.Result{Status: run.StatusFailed, Error: "boom"}); err != nil {
+		t.Fatalf("Complete r-c: %v", err)
+	}
+
+	ids := func(runs []run.Run) string {
+		var out []string
+		for _, r := range runs {
+			out = append(out, r.ID)
+		}
+		return strings.Join(out, ",")
+	}
+
+	all, err := l.ListRuns(ctx, "", 10)
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if got := ids(all); got != "r-d,r-c,r-b,r-a" {
+		t.Fatalf("ListRuns order = %s, want newest first r-d,r-c,r-b,r-a", got)
+	}
+	for _, r := range all {
+		if r.Input != nil || r.Output != nil {
+			t.Fatalf("listed run %s carries payloads (input %q, output %q), want none", r.ID, r.Input, r.Output)
+		}
+		if r.Name != "wf" || r.MaxAttempts != 3 || r.CreatedAt.IsZero() {
+			t.Fatalf("listed run %+v lost envelope fields", r)
+		}
+	}
+	if c := all[1]; c.Status != run.StatusFailed || c.Error != "boom" || c.Attempt != 1 || c.CompletedAt.IsZero() {
+		t.Fatalf("listed failed run = %+v, want status, error, attempt and completion time", c)
+	}
+
+	top, err := l.ListRuns(ctx, "", 2)
+	if err != nil {
+		t.Fatalf("ListRuns limit 2: %v", err)
+	}
+	if got := ids(top); got != "r-d,r-c" {
+		t.Fatalf("ListRuns limit 2 = %s, want r-d,r-c", got)
+	}
+
+	pending, err := l.ListRuns(ctx, run.StatusPending, 10)
+	if err != nil {
+		t.Fatalf("ListRuns pending: %v", err)
+	}
+	if got := ids(pending); got != "r-d,r-a" {
+		t.Fatalf("ListRuns pending = %s, want r-d,r-a", got)
+	}
+	succeeded, err := l.ListRuns(ctx, run.StatusSucceeded, 10)
+	if err != nil {
+		t.Fatalf("ListRuns succeeded: %v", err)
+	}
+	if got := ids(succeeded); got != "r-b" {
+		t.Fatalf("ListRuns succeeded = %s, want r-b", got)
+	}
+
+	for _, limit := range []int{0, -1} {
+		if _, err := l.ListRuns(ctx, "", limit); err == nil {
+			t.Fatalf("ListRuns limit %d = nil error, want error", limit)
+		}
+	}
+}
+
+// TestListRunsSharedTable: in a shared table with no mapped created-at
+// column, ListRuns orders by the envelope's CreatedAt and never lists
+// another application's rows.
+func TestListRunsSharedTable(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	runsTable, recsTable := uniqueName("app_runs_list"), uniqueName("app_recs_list")
+	applyDDL(t, pool, fmt.Sprintf(`
+CREATE TABLE %[1]s (run_id text, status text, envelope text, source text NOT NULL);
+CREATE UNIQUE INDEX ON %[1]s (run_id);
+CREATE TABLE %[2]s (run_id text, record_key text, envelope jsonb, source text NOT NULL);
+CREATE UNIQUE INDEX ON %[2]s (run_id, record_key)`, runsTable, recsTable))
+	dropTables(t, pool, runsTable, recsTable)
+
+	m := pgledger.DefaultMapping()
+	m.Runs.Table, m.Records.Table = runsTable, recsTable
+	m.Runs.CreatedAt = ""
+	m.Runs.Scope = pgledger.Scope{Column: "source", Value: "anchor"}
+	m.Records.Scope = pgledger.Scope{Column: "source", Value: "anchor"}
+	l, err := pgledger.New(pool, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Validate(ctx); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	// Accepted out of creation order: the listing must sort by time, not
+	// by insertion.
+	for _, r := range []run.Run{
+		{ID: "late", Name: "wf", Status: run.StatusPending, CreatedAt: base.Add(time.Hour)},
+		{ID: "early", Name: "wf", Status: run.StatusPending, CreatedAt: base},
+	} {
+		if err := l.Accept(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, fmt.Sprintf(
+		`INSERT INTO %s VALUES ('theirs', 'pending', '{"CreatedAt":"2030-01-01T00:00:00Z"}', 'other-app')`,
+		runsTable)); err != nil {
+		t.Fatalf("seed alien run: %v", err)
+	}
+
+	runs, err := l.ListRuns(ctx, run.StatusPending, 10)
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != 2 || runs[0].ID != "late" || runs[1].ID != "early" {
+		t.Fatalf("ListRuns = %+v, want late then early and no alien row", runs)
+	}
+	if !runs[1].CreatedAt.Equal(base) {
+		t.Fatalf("early CreatedAt = %v, want %v from the envelope", runs[1].CreatedAt, base)
+	}
+}
