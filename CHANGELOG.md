@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 (2026-10-21)
+
+### Features
+
+- **postgres**: pgkit for migrations and LISTEN, a ledger prefix read, byte-ordered keys (#5) ([078fd82](https://github.com/urmzd/anchor/commit/078fd82554ea493779749438885bb7a543aea442))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.3.0...v0.4.0)
+
+
 ## 0.3.0 (2026-10-18)
 
 ### Features
