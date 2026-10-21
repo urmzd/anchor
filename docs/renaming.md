@@ -1,24 +1,29 @@
-# Ecosystem naming migration
+# Names
 
-| Previous | Current | Responsibility |
-|----------|---------|----------------|
-| Collegium and Vultus | Warp | Shared human-and-agent workspace, API and presentation |
-| Saige | Saige | Agent execution and evaluations |
-| Mandatum | Fiber | Event bus, connectors and request routing |
-| Legatus | Playscape | Governed execution environments and workspace isolation |
-| Duraturo | Anchor | Durable execution, replay and recovery |
+The ecosystem uses one set of names, everywhere: in code, configuration,
+persisted data and on the wire.
 
-This is a breaking source and configuration rename. Update Go imports to `github.com/urmzd/anchor`, `github.com/urmzd/playscape`, `github.com/urmzd/fiber` and `github.com/urmzd/warp`. Saige's durable backend moves from `agent/durable/duraturo` to `agent/durable/anchor`. Warp UI packages use `@warp/*` and live with the platform in one pnpm workspace.
+| Name | Responsibility |
+|------|----------------|
+| Warp | The platform: the one process, its API, console and Slack app |
+| Fiber | The library for the event bus, connectors, routing and the agent runtime |
+| Saige | The library for agent execution and evaluations |
+| Playscape | The library for governed execution environments and workspace isolation |
+| Anchor | The library for durable execution, replay and recovery |
 
-Update CLI names, environment prefixes (`ANCHOR_`, `PLAYSCAPE_`, `FIBER_`, `WARP_`), service names and deployment references together. Existing deployments should back up state and explicitly move any old dot-directories to their new names before starting the renamed binaries. Warp's cookies and OAuth scopes now use `warp`; update identity-provider configuration and sign in again.
+Earlier names (Collegium and Vultus for Warp, Mandatum for Fiber, Legatus for
+Playscape, Duraturo for Anchor) are retired. They survive only in changelog
+history and in the one migration step that renames an existing database's
+tables, so a deployment moves forward without a manual step.
 
-Persisted Fiber database table names, replay activity and record names, agent-spec hash domains, protobuf package and service identities, and Saige wire error codes retain their original values. They are compatibility contracts, not branding. Historical changelog entries and legacy replay fixtures keep their original names too.
+Identifiers that changed with the last of the rename, and what to do:
 
-## Release order
+| Identifier | Was | Is | Upgrade |
+|------------|-----|----|---------|
+| Postgres tables and indexes | `mandatum_*` | `fiber_*` | renamed in place at startup |
+| Durable activity and record names | `mandatum.*` | `fiber.*` | drain runs in flight before upgrading; they are not replayed across it |
+| Saige wire error codes | `durable.duraturo.*` | `durable.anchor.*` | upgrade every process together |
+| GitHub review format | `mandatum.github.review.v1` | `warp.github.review.v1` | agents' prompts name the new one (see `examples/github-review`) |
+| GitHub `/fix` grant | `mandatum.github.mutation.v1` | `warp.github.mutation.v1` | a grant issued before the upgrade is refused; ask for a new `/fix` |
 
-1. Anchor, including its Postgres and Redis adapter modules, and Playscape.
-2. Saige with its Anchor backend and pinned Anchor dependencies.
-3. Fiber with pinned Anchor, Playscape and Saige dependencies.
-4. Warp with the platform and presentation together and pinned library dependencies.
-
-The old Vultus repository remains available as history. Active UI development belongs in Warp.
+Environment variables use `WARP_`, `FIBER_`, `PLAYSCAPE_` and `ANCHOR_`.
