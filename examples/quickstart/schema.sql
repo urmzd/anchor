@@ -3,8 +3,8 @@
 --
 -- Generated from pgledger.RecommendedDDL(pgledger.DefaultMapping()) and
 -- pgqueue.RecommendedDDL(pgqueue.DefaultMapping()). In your own system,
--- apply the equivalent through your migration tooling, or map the adapters
--- onto tables you already have.
+-- apply the equivalent through your migration tooling or pgkit.Apply, or
+-- map the adapters onto tables you already have.
 
 -- Runs table for pgledger. Suggested only: pgledger never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_runs" (

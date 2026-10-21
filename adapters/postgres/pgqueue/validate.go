@@ -73,8 +73,9 @@ func (q *Queue) Validate(ctx context.Context) error {
 
 // RecommendedDDL returns suggested CREATE statements matching m. It is
 // advice returned as a string, never executed by this package: review it and
-// apply it with your own migration tooling. The run ID is COLLATE "C",
-// byte-ordered like every anchor key (see pgledger.RecommendedDDL).
+// apply it with your own migration tooling, or hand it to pgkit.Apply. The
+// run ID is COLLATE "C", byte-ordered like every anchor key (see
+// pgledger.RecommendedDDL).
 func RecommendedDDL(m Mapping) string {
 	var b strings.Builder
 	b.WriteString("-- Queue table for pgqueue. Suggested only: pgqueue never executes DDL.\n")

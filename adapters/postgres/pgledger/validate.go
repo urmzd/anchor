@@ -137,8 +137,8 @@ func requireColumn(errs *[]error, t pginspect.TableInfo, table, field, col, sugg
 
 // RecommendedDDL returns suggested CREATE statements matching m. It is
 // advice returned as a string, never executed by this package: review it and
-// apply it with your own migration tooling. Existing tables that already
-// satisfy Validate need none of it.
+// apply it with your own migration tooling, or hand it to pgkit.Apply.
+// Existing tables that already satisfy Validate need none of it.
 //
 // Run IDs and record keys are COLLATE "C": they are opaque byte strings, the
 // janitor pages pending runs in (created_at, run_id) order, and prefix reads

@@ -23,8 +23,9 @@
 
 - **Wrap, don't rewrite**: `Activity`, `Step`, and `Event` wrap the code you have. Outside a run every wrapped function is a plain Go call, so tests, scripts, and codebases mid-migration keep working unchanged. Adoption is monotone.
 - **Interfaces first, no owned schema**: `pkg/ledger.Ledger` and `pkg/queue.Queue` are pure interfaces, the root module has zero third-party dependencies, and the in-memory implementations are complete single-process systems.
-- **Your tables, validated, never migrated**: the Postgres adapter maps onto tables you already own via a declarative `Mapping`. `Validate` introspects the live schema and errors with guidance; `RecommendedDDL` returns suggested DDL and never executes it.
+- **Your tables, validated, never migrated**: the Postgres adapter maps onto tables you already own via a declarative `Mapping`. `Validate` introspects the live schema and errors with guidance; `RecommendedDDL` returns suggested DDL and never executes it (hand it to `pgkit.Apply` if you want it applied at startup).
 - **Postgres-only works**: `pgqueue` (`FOR UPDATE SKIP LOCKED`) runs the queue in the same database, and `pgqueue.NewDeltaQueue` adds streaming on an append-only delta table woken by `LISTEN/NOTIFY`. Redis (`redisqueue`: a ZSET lease queue plus a Redis Streams delta log) is a throughput upgrade, not a requirement, and is disposable: the janitor rebuilds it from the ledger.
+- **Shared Postgres plumbing**: `pgkit`, in the same module, is what the rest of the stack uses instead of hand-rolling it: `pgkit.Apply` runs schema statements once per database under an advisory lock, and `pgkit.Listener` carries a process's `LISTEN/NOTIFY` over one connection.
 - **Activities are the ABI**: record identity is `name#occurrence` (nested calls scoped under their parent's key), so code rolls forward across releases with no version, patch, or pinning APIs; checkpoints stay valid when other, differently-named calls are inserted, removed, or reordered; divergence fails loudly (`ErrNonDeterministic`); a breaking input/output change is a rename (`charge-payment.v2`).
 - **Fenced attempts, budgeted failures**: `(runID, attempt)` fences every claim, with the attempt owned by the queue and incremented at every claim across the run's whole lineage; retry budget is a separate failure counter that moves only when an execution genuinely fails, so waiting and shutdown interruptions are free. The first terminal write wins; heartbeats never touch the ledger. The happy path costs two run-level ledger writes plus one per record.
 - **Waiting is native**: an `Event` is a record that does not exist yet, so the run parks off the queue at zero cost. Resume is one record write plus one enqueue: `Client.Signal`, or a row in your own table with the janitor as backstop.
@@ -210,6 +211,33 @@ if err := q.Validate(ctx); err != nil {
 }
 ```
 
+## Postgres Plumbing
+
+`pgkit` holds the two pieces every Postgres-backed component needs. `Apply` runs idempotent steps in one transaction under an advisory lock named by the caller, so replicas that start together migrate one at a time:
+
+```go
+err := pgkit.Apply(ctx, pool, "orders.durable",
+	pgledger.RecommendedDDL(pgledger.DefaultMapping()),
+	pgqueue.RecommendedDDL(pgqueue.DefaultMapping()))
+```
+
+`Listener` multiplexes `LISTEN` over one dedicated connection, held only while something is subscribed. Every subscription starts with a `Resync`, and gets another after a reconnect, meaning "re-read your state, notifications may have been missed":
+
+```go
+l, err := pgkit.NewListener(pool)
+notes, err := l.Listen(ctx, "orders") // closed when ctx ends
+for n := range notes {
+	if n.Resync {
+		// re-read what you watch
+		continue
+	}
+	fmt.Println(n.Payload)
+}
+
+// Share it: one connection for the delta log and everything else.
+q, err := pgqueue.NewDeltaQueue(pool, qm, dm, pgqueue.WithListener(l))
+```
+
 ## Concepts
 
 | Concept | What it is |
@@ -237,9 +265,9 @@ if err := q.Validate(ctx); err != nil {
 anchor is the bottom of five layers (warp, fiber, saige, playscape, anchor):
 durability for everything above it. playscape, saige and fiber build on its
 ledger, queue and worker rather than keeping their own, and its Postgres
-adapter module is where the stack's shared Postgres plumbing (migrations,
-LISTEN/NOTIFY) belongs. It is a library chosen in code: no binary, no
-configuration file. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
+adapter module holds the stack's shared Postgres plumbing (`pgkit`:
+advisory-locked migrations and LISTEN/NOTIFY). It is a library chosen in
+code: no binary, no configuration file. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
 remaining duplication and the stack's limitations in one place.
 
 ## License
