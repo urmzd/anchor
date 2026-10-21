@@ -434,6 +434,12 @@ CREATE UNIQUE INDEX ON %[2]s (run_id, record_key)`,
 		t.Fatalf("ListPending = %v, want empty after Complete", batch)
 	}
 
+	// The prefix read decodes the text envelope like Load does.
+	prefixed, err := l.RecordsWithPrefix(ctx, "r-text", "s#")
+	if err != nil || len(prefixed) != 1 || string(prefixed[0].Output) != "v" {
+		t.Fatalf("RecordsWithPrefix over a text envelope = %+v, %v; want s#0", prefixed, err)
+	}
+
 	// GetRun must work over the text envelope too: the point read decodes
 	// the same envelope Load does, minus the record prefetch.
 	gotRun, err := l.GetRun(ctx, "r-text")
@@ -489,5 +495,59 @@ func TestGetRun(t *testing.T) {
 	}
 	if len(recs) != 1 || recs[0].Codec != "application/json" {
 		t.Fatalf("records = %+v, want one record with Codec application/json", recs)
+	}
+}
+
+// TestRecordsWithPrefixHonorsScope: in shared tables, another application's
+// run and records under the same run ID are invisible to the prefix read,
+// both for the existence check and for the records it returns.
+func TestRecordsWithPrefixHonorsScope(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	runsTable, recsTable := uniqueName("app_runs_prefix"), uniqueName("app_recs_prefix")
+	applyDDL(t, pool, fmt.Sprintf(`
+CREATE TABLE %[1]s (run_id text, status text, envelope jsonb, created_at timestamptz, source text NOT NULL);
+CREATE UNIQUE INDEX ON %[1]s (run_id);
+CREATE TABLE %[2]s (run_id text, record_key text, envelope jsonb, source text NOT NULL);
+CREATE UNIQUE INDEX ON %[2]s (run_id, record_key)`, runsTable, recsTable))
+	dropTables(t, pool, runsTable, recsTable)
+
+	m := pgledger.DefaultMapping()
+	m.Runs.Table, m.Records.Table = runsTable, recsTable
+	m.Runs.Scope = pgledger.Scope{Column: "source", Value: "anchor"}
+	m.Records.Scope = pgledger.Scope{Column: "source", Value: "anchor"}
+	l, err := pgledger.New(pool, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Validate(ctx); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	if err := l.Accept(ctx, run.Run{ID: "ours", Name: "wf", Status: run.StatusPending, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Record(ctx, run.Record{RunID: "ours", Key: "event:go#0", Kind: run.KindEvent, Status: run.RecordOK}); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		fmt.Sprintf(`INSERT INTO %s VALUES ('theirs', 'pending', '{}', now(), 'other-app')`, runsTable),
+		fmt.Sprintf(`INSERT INTO %s VALUES ('theirs', 'event:go#0', '{}', 'other-app')`, recsTable),
+		fmt.Sprintf(`INSERT INTO %s VALUES ('ours', 'event:alien#0', '{}', 'other-app')`, recsTable),
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("seed alien rows: %v", err)
+		}
+	}
+
+	recs, err := l.RecordsWithPrefix(ctx, "ours", "event:")
+	if err != nil {
+		t.Fatalf("RecordsWithPrefix: %v", err)
+	}
+	if len(recs) != 1 || recs[0].Key != "event:go#0" {
+		t.Fatalf("RecordsWithPrefix(ours, event:) = %+v, want only our event:go#0", recs)
+	}
+	if _, err := l.RecordsWithPrefix(ctx, "theirs", "event:"); !errors.Is(err, run.ErrNotFound) {
+		t.Fatalf("RecordsWithPrefix on another scope's run = %v, want run.ErrNotFound", err)
 	}
 }

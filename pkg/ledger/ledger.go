@@ -62,3 +62,19 @@ type Ledger interface {
 type RunGetter interface {
 	GetRun(ctx context.Context, runID string) (run.Run, error)
 }
+
+// PrefixReader is an optional capability: the records of one run whose keys
+// start with one of prefixes. A poll that wants a few small records (an
+// event's arrival, a stop request) prefers it to Load, which reads every
+// record of the run, a large transcript among them. Discovered by type
+// assertion, like RunGetter.
+//
+// Records come back in no particular order, each once even when it matches
+// several prefixes. A prefix is literal and case-sensitive, compared byte by
+// byte like strings.HasPrefix: no wildcards. Nested records share their
+// parent's key as a prefix (process-order#0/charge-payment#0), so a parent's
+// key reads its whole subtree. No prefixes match nothing; an empty prefix
+// matches every record. An unknown run is run.ErrNotFound, as in Load.
+type PrefixReader interface {
+	RecordsWithPrefix(ctx context.Context, runID string, prefixes ...string) ([]run.Record, error)
+}

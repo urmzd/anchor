@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/urmzd/anchor/pkg/ledger"
 )
 
 // lazyPool returns a pool that parses but never connects: pgxpool dials
@@ -19,6 +21,9 @@ func lazyPool(t *testing.T) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 	return pool
 }
+
+// Ledger offers the optional prefix-read capability.
+var _ ledger.PrefixReader = (*Ledger)(nil)
 
 func TestNewRejectsNilPool(t *testing.T) {
 	if _, err := New(nil, DefaultMapping()); err == nil {

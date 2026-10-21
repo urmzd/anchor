@@ -21,7 +21,9 @@ import (
 )
 
 // Compile-time contract checks: Ledger is a ledger.Ledger and offers the
-// optional ledger.RunGetter point-read capability.
+// optional ledger.RunGetter point read. It also offers ledger.PrefixReader,
+// checked in the tests only, so this package still builds against a pinned
+// root release that predates that interface.
 var (
 	_ ledger.Ledger    = (*Ledger)(nil)
 	_ ledger.RunGetter = (*Ledger)(nil)
@@ -58,6 +60,7 @@ type Ledger struct {
 	sqlLoadRecs      string
 	sqlRunExists     string
 	sqlRecordGet     string
+	sqlRecsPrefix    string
 	sqlListPending   string
 
 	envMode atomic.Int32
@@ -150,6 +153,29 @@ func (l *Ledger) buildSQL() {
 
 	l.sqlRecordGet = fmt.Sprintf("SELECT %s::jsonb FROM %s WHERE %s = $1 AND %s = $2%s",
 		l.qRecsEnv, l.qRecsTable, l.qRecsID, l.qRecsKey, recsScope(3))
+
+	// Prefix read: the run's existence and its matching records in one
+	// statement. The LEFT JOIN yields no row for an unknown run, one
+	// all-NULL row for a known run with no match, else the matches. ^@ is
+	// starts_with: prefixes are literal, with no LIKE wildcards to escape.
+	// Takes $1 run ID, $2 prefixes, then the runs and records scope values
+	// for whichever scopes are configured.
+	next := 3
+	prefixRunsScope := ""
+	if l.qRunsScope != "" {
+		prefixRunsScope = fmt.Sprintf(" AND %s = $%d", l.qRunsScope, next)
+		next++
+	}
+	prefixRecsScope := ""
+	if l.qRecsScope != "" {
+		prefixRecsScope = fmt.Sprintf(" AND rec.%s = $%d", l.qRecsScope, next)
+	}
+	l.sqlRecsPrefix = fmt.Sprintf(`SELECT rec.%s, rec.%s::jsonb
+FROM (SELECT 1 FROM %s WHERE %s = $1%s) AS r
+LEFT JOIN %s AS rec ON rec.%s = $1 AND rec.%s ^@ ANY($2::text[])%s`,
+		l.qRecsKey, l.qRecsEnv,
+		l.qRunsTable, l.qRunsID, prefixRunsScope,
+		l.qRecsTable, l.qRecsID, l.qRecsKey, prefixRecsScope)
 
 	// ListPending pages in ascending (created, id) order, strictly after
 	// the cursor. The row comparison uses the exact same created
@@ -328,6 +354,55 @@ func (l *Ledger) GetRun(ctx context.Context, runID string) (run.Run, error) {
 		return run.Run{}, fmt.Errorf("pgledger: get run %s: %w", runID, err)
 	}
 	return r, nil
+}
+
+// RecordsWithPrefix is the optional ledger.PrefixReader capability: the
+// run's records whose key starts with one of prefixes, and a run.ErrNotFound
+// for an unknown run, in one round trip. The (run ID, key) unique index
+// narrows the scan to the run, and only matching envelopes are decoded and
+// sent, so a poll for one small record never pays for a large one.
+func (l *Ledger) RecordsWithPrefix(ctx context.Context, runID string, prefixes ...string) ([]run.Record, error) {
+	if prefixes == nil {
+		prefixes = []string{}
+	}
+	args := []any{runID, prefixes}
+	if l.qRunsScope != "" {
+		args = append(args, l.m.Runs.Scope.Value)
+	}
+	if l.qRecsScope != "" {
+		args = append(args, l.m.Records.Scope.Value)
+	}
+	rows, err := l.pool.Query(ctx, l.sqlRecsPrefix, args...)
+	if err != nil {
+		return nil, fmt.Errorf("pgledger: records of %s: %w", runID, err)
+	}
+	defer rows.Close()
+
+	found := false
+	var recs []run.Record
+	for rows.Next() {
+		found = true
+		var key *string
+		var env []byte
+		if err := rows.Scan(&key, &env); err != nil {
+			return nil, fmt.Errorf("pgledger: records of %s: %w", runID, err)
+		}
+		if key == nil {
+			continue // the run exists and nothing matched
+		}
+		rec, err := decodeRecord(env, runID, *key)
+		if err != nil {
+			return nil, fmt.Errorf("pgledger: records of %s: %w", runID, err)
+		}
+		recs = append(recs, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pgledger: records of %s: %w", runID, err)
+	}
+	if !found {
+		return nil, fmt.Errorf("pgledger: records of %s: %w", runID, run.ErrNotFound)
+	}
+	return recs, nil
 }
 
 // Load returns the run and all of its records, reconstructed from the
