@@ -105,9 +105,9 @@ func TestDefaultMapping(t *testing.T) {
 }
 
 func TestRecommendedDDLGolden(t *testing.T) {
-	const want = `-- Queue table for pgqueue. Suggested only: anchor never executes DDL.
+	const want = `-- Queue table for pgqueue. Suggested only: pgqueue never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_queue" (
-    "run_id" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
     "ready_at" timestamptz,
     "lease_until" timestamptz,
     "attempt" bigint NOT NULL DEFAULT 0,

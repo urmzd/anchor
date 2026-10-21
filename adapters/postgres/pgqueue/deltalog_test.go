@@ -67,10 +67,10 @@ func TestDeltaQueueCapability(t *testing.T) {
 }
 
 func TestRecommendedDeltaDDLGolden(t *testing.T) {
-	const want = `-- Delta log table for pgqueue. Suggested only: anchor never executes DDL.
+	const want = `-- Delta log table for pgqueue. Suggested only: pgqueue never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_delta" (
     "seq" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    "run_id" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
     "record_key" text NOT NULL,
     "attempt" bigint NOT NULL,
     "kind" text NOT NULL,

@@ -104,20 +104,20 @@ func TestDefaultMapping(t *testing.T) {
 }
 
 func TestRecommendedDDLGolden(t *testing.T) {
-	const want = `-- Runs table for pgledger. Suggested only: anchor never executes DDL.
+	const want = `-- Runs table for pgledger. Suggested only: pgledger never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_runs" (
-    "run_id" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
     "status" text NOT NULL,
     "envelope" jsonb NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "anchor_runs_run_id_key" ON "anchor_runs" ("run_id");
-CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status", "created_at");
+CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status", "created_at", "run_id");
 
--- Records table for pgledger. Suggested only: anchor never executes DDL.
+-- Records table for pgledger. Suggested only: pgledger never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_records" (
-    "run_id" text NOT NULL,
-    "record_key" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
+    "record_key" text COLLATE "C" NOT NULL,
     "envelope" jsonb NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "anchor_records_run_id_record_key_key" ON "anchor_records" ("run_id", "record_key");

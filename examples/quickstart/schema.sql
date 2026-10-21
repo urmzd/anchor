@@ -1,32 +1,32 @@
--- Suggested DDL — applied by Postgres's init hook via docker-compose;
--- anchor never creates tables.
+-- Suggested DDL, applied by Postgres's init hook via docker-compose;
+-- anchor's adapters never create tables.
 --
 -- Generated from pgledger.RecommendedDDL(pgledger.DefaultMapping()) and
 -- pgqueue.RecommendedDDL(pgqueue.DefaultMapping()). In your own system,
--- apply the equivalent through your migration tooling — or map the adapters
+-- apply the equivalent through your migration tooling, or map the adapters
 -- onto tables you already have.
 
--- Runs table for pgledger. Suggested only: anchor never executes DDL.
+-- Runs table for pgledger. Suggested only: pgledger never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_runs" (
-    "run_id" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
     "status" text NOT NULL,
     "envelope" jsonb NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "anchor_runs_run_id_key" ON "anchor_runs" ("run_id");
-CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status", "created_at");
+CREATE INDEX IF NOT EXISTS "anchor_runs_pending_idx" ON "anchor_runs" ("status", "created_at", "run_id");
 
--- Records table for pgledger. Suggested only: anchor never executes DDL.
+-- Records table for pgledger. Suggested only: pgledger never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_records" (
-    "run_id" text NOT NULL,
-    "record_key" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
+    "record_key" text COLLATE "C" NOT NULL,
     "envelope" jsonb NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "anchor_records_run_id_record_key_key" ON "anchor_records" ("run_id", "record_key");
 
--- Queue table for pgqueue. Suggested only: anchor never executes DDL.
+-- Queue table for pgqueue. Suggested only: pgqueue never executes DDL.
 CREATE TABLE IF NOT EXISTS "anchor_queue" (
-    "run_id" text NOT NULL,
+    "run_id" text COLLATE "C" NOT NULL,
     "ready_at" timestamptz,
     "lease_until" timestamptz,
     "attempt" bigint NOT NULL DEFAULT 0,
