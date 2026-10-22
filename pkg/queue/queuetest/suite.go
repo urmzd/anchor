@@ -311,6 +311,26 @@ func Run(t *testing.T, factory func(t *testing.T) queue.Queue) {
 		}
 	})
 
+	t.Run("ClaimOnDoneContextTakesNothing", func(t *testing.T) {
+		// A caller that has already stopped could hold no lease, so a
+		// Claim on a done context must not take one, even with a run due.
+		q := factory(t)
+		mustEnqueue(t, q, "r1", 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if it, _, err := q.Claim(ctx, time.Minute); err == nil {
+			t.Fatalf("Claim on a done context = %+v, want context.Canceled", it)
+		} else if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Claim error = %v, want context.Canceled", err)
+		}
+
+		it, _ := mustClaim(t, q, waitLong, time.Minute)
+		if it.RunID != "r1" || it.Attempt != 1 || it.Failures != 0 {
+			t.Fatalf("Claim = %+v, want {r1 1 0}: the done-context Claim took a lease", it)
+		}
+	})
+
 	t.Run("FailureAccounting", func(t *testing.T) {
 		// Failures is the retry budget and moves ONLY on real failures:
 		// a failed release or an expiry reclaim. Interruptions and

@@ -130,3 +130,51 @@ func TestRecommendedDDLScoped(t *testing.T) {
 		t.Errorf("RecommendedDDL missing scope column in:\n%s", got)
 	}
 }
+
+func TestAnswerContext(t *testing.T) {
+	type key struct{}
+	t.Run("LiveWhileCallerLives", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "v"))
+		defer cancel()
+		stmtCtx, stop := answerContext(ctx, time.Hour)
+		if stmtCtx.Value(key{}) != "v" {
+			t.Fatal("answer context lost the caller's values")
+		}
+		if _, ok := stmtCtx.Deadline(); ok {
+			t.Fatal("answer context carries a deadline while the caller lives")
+		}
+		stop()
+		if stmtCtx.Err() == nil {
+			t.Fatal("stop did not cancel the answer context")
+		}
+	})
+
+	t.Run("OutlivesCancelByWait", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		const wait = 300 * time.Millisecond
+		stmtCtx, stop := answerContext(ctx, wait)
+		defer stop()
+		cancel()
+		time.Sleep(wait / 10)
+		if stmtCtx.Err() != nil {
+			t.Fatal("answer context died with its caller; it must give the answer time to arrive")
+		}
+		select {
+		case <-stmtCtx.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("answer context outlived its caller by far more than wait")
+		}
+	})
+
+	t.Run("CallerDeadlineStartsTheWait", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+		stmtCtx, stop := answerContext(ctx, time.Hour)
+		defer stop()
+		<-ctx.Done()
+		time.Sleep(10 * time.Millisecond)
+		if stmtCtx.Err() != nil {
+			t.Fatal("answer context expired with the caller's deadline")
+		}
+	})
+}
