@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 (2026-10-22)
+
+### Bug Fixes
+
+- a stop mid-claim no longer leases a Postgres run to nobody (#7) ([ff938a4](https://github.com/urmzd/anchor/commit/ff938a4ab4e635888b1c5aebc273600a1f7564bb))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.5.0...v0.5.1)
+
+
 ## 0.5.0 (2026-10-22)
 
 ### Features
