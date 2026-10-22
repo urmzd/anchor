@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 (2026-10-22)
+
+### Features
+
+- **postgres**: anchor CLI to inspect and replay a ledger (#6) ([0e960bf](https://github.com/urmzd/anchor/commit/0e960bfc9aa4ed3180b14b98a7db619ae0e18c04))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.4.0...v0.5.0)
+
+
 ## 0.4.0 (2026-10-21)
 
 ### Features
