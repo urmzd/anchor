@@ -42,6 +42,29 @@ type Queue interface {
 	// time is the lease deadline. Expiry is queue-internal: a lapsed lease
 	// makes the run claimable again, and reclaiming it increments both the
 	// attempt and — because the previous execution died — Failures.
+	//
+	// A caller may stop mid-claim. Called with a done ctx, Claim takes
+	// nothing and returns ctx's error. Once a claim has been sent, though,
+	// the store can grant its lease to a caller that stopped listening, so
+	// a backend should wait out the answer to a claim already sent, for a
+	// bounded time, rather than abandon it when ctx is done, and return the
+	// lease it took. Claim may therefore return an Item after ctx is done:
+	// the caller holds that lease like any other, and a caller that is
+	// stopping hands it back with Release(ctx, it, 0, false).
+	//
+	// An error from Claim, ctx's own included, does not prove that no lease
+	// was taken. Once a claim is sent, a lost answer (the store silent past
+	// the backend's bound, a connection broken after the store took the
+	// lease, a client that stopped waiting) leaves the outcome unknown: a
+	// lease taken then belongs to nobody until it lapses after ttl, and the
+	// reclaim charges the run a failure, as for a crashed worker. Memory
+	// claims under its lock and loses no answer. pgqueue waits up to 5s
+	// past ctx's end for a claim statement already sent. redisqueue sends
+	// its claim script on ctx and leaves the wait for the reply to go-redis,
+	// which gives up at the client's ReadTimeout, or with
+	// ContextTimeoutEnabled at ctx's deadline, so a stop that lands after
+	// the script ran can still leave the run leased to nobody until its ttl
+	// (a known limit; docs/design/replay.md lists it).
 	Claim(ctx context.Context, ttl time.Duration) (Item, time.Time, error)
 
 	// Heartbeat extends the lease by ttl iff it still holds. A stale

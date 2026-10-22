@@ -13,6 +13,9 @@
 // failures counter, because the previous execution died holding it — and
 // takes a lease; Heartbeat, Release, and Settle are fenced by
 // (RunID, Attempt) and answer a stale attempt with run.ErrSuperseded.
+// A claim statement already sent is not abandoned when Claim's context is
+// cancelled: Postgres may commit it anyway, so Claim waits up to 5s past
+// the cancellation for the answer and returns any lease it took.
 // Release carries a failed flag: a failed release consumes retry budget
 // (failures increments), an interrupted one does not. Rows are never
 // deleted — Settle clears ready_at and lease_until but keeps the row (and
@@ -49,9 +52,17 @@ import (
 	"github.com/urmzd/anchor/pkg/run"
 )
 
-// defaultPollInterval is how often a blocked Claim re-checks for claimable
-// work when not overridden by WithPollInterval.
-const defaultPollInterval = 200 * time.Millisecond
+const (
+	// defaultPollInterval is how often a blocked Claim re-checks for
+	// claimable work when not overridden by WithPollInterval.
+	defaultPollInterval = 200 * time.Millisecond
+
+	// claimAnswerWait bounds how long Claim keeps waiting, once its ctx is
+	// done, for the answer to a claim statement it already sent. A healthy
+	// database answers in milliseconds, so this only delays the stop of a
+	// worker whose database has stopped answering.
+	claimAnswerWait = 5 * time.Second
+)
 
 // Scope is an optional discriminator for queue tables shared with
 // non-anchor rows: every row written carries Value in Column and every
@@ -325,26 +336,32 @@ WHERE t.%s IS NULL AND (t.%s IS NULL OR t.%s < now())`,
 // increments both. The lease deadline returned is computed on the caller's
 // clock; the authoritative lease lives in the database on the server's
 // clock.
+//
+// Waiting between polls, and for a pool connection, ends as soon as ctx is
+// done, and Claim on a done ctx asks nothing. A claim statement already
+// sent is not abandoned, though: it runs on a context ctx's cancellation
+// does not reach, and once ctx is done Claim gives it up to
+// claimAnswerWait (5s) more to answer. pgx abandons a statement the moment
+// its context is cancelled, yet Postgres can still carry it out and
+// commit, which would lease a run to nobody. So a lease the statement took
+// comes back as an Item, even after ctx is done, for the caller to hold or
+// hand back.
 func (q *Queue) Claim(ctx context.Context, ttl time.Duration) (queue.Item, time.Time, error) {
 	args := []any{ttl.Seconds()}
 	if q.qScope != "" {
 		args = append(args, q.m.Scope.Value)
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return queue.Item{}, time.Time{}, err
+		}
 		deadline := time.Now().Add(ttl)
-		var id string
-		var attempt, failures int64
-		err := q.pool.QueryRow(ctx, q.sqlClaim, args...).Scan(&id, &attempt, &failures)
+		it, ok, err := q.claimOnce(ctx, args)
 		switch {
-		case err == nil:
-			return queue.Item{RunID: id, Attempt: int(attempt), Failures: int(failures)}, deadline, nil
-		case errors.Is(err, pgx.ErrNoRows):
-			// Nothing claimable; poll again.
-		default:
-			if ctx.Err() != nil {
-				return queue.Item{}, time.Time{}, ctx.Err()
-			}
-			return queue.Item{}, time.Time{}, fmt.Errorf("pgqueue: claim: %w", err)
+		case err != nil:
+			return queue.Item{}, time.Time{}, err
+		case ok:
+			return it, deadline, nil
 		}
 
 		select {
@@ -352,6 +369,61 @@ func (q *Queue) Claim(ctx context.Context, ttl time.Duration) (queue.Item, time.
 			return queue.Item{}, time.Time{}, ctx.Err()
 		case <-time.After(q.poll):
 		}
+	}
+}
+
+// claimOnce sends the claim statement once and reports whether it took a
+// lease. The connection is acquired on ctx, since nothing has been asked of
+// the database yet; the statement runs on answerContext, so ctx's
+// cancellation cannot abandon it.
+func (q *Queue) claimOnce(ctx context.Context, args []any) (queue.Item, bool, error) {
+	conn, err := q.pool.Acquire(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return queue.Item{}, false, ctx.Err()
+		}
+		return queue.Item{}, false, fmt.Errorf("pgqueue: claim: %w", err)
+	}
+	defer conn.Release()
+	if err := ctx.Err(); err != nil {
+		return queue.Item{}, false, err // stopped while acquiring: ask nothing
+	}
+
+	stmtCtx, stop := answerContext(ctx, claimAnswerWait)
+	defer stop()
+	var id string
+	var attempt, failures int64
+	err = conn.QueryRow(stmtCtx, q.sqlClaim, args...).Scan(&id, &attempt, &failures)
+	switch {
+	case err == nil:
+		return queue.Item{RunID: id, Attempt: int(attempt), Failures: int(failures)}, true, nil
+	case errors.Is(err, pgx.ErrNoRows):
+		return queue.Item{}, false, nil
+	case stmtCtx.Err() != nil:
+		// Silent past the bound: whether the statement took a lease is
+		// unknown, and one it took lapses after its ttl.
+		return queue.Item{}, false, fmt.Errorf("pgqueue: claim: no answer within %v of cancellation: %w", claimAnswerWait, ctx.Err())
+	case ctx.Err() != nil:
+		return queue.Item{}, false, ctx.Err()
+	default:
+		return queue.Item{}, false, fmt.Errorf("pgqueue: claim: %w", err)
+	}
+}
+
+// answerContext returns the context a statement that must not be abandoned
+// runs on. It carries ctx's values but not its cancellation or deadline
+// while ctx is live; once ctx is done, it stays live for wait more, so a
+// statement already sent can still deliver its answer, and then it is
+// cancelled. stop releases it.
+func answerContext(ctx context.Context, wait time.Duration) (context.Context, context.CancelFunc) {
+	stmtCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stopGrace := context.AfterFunc(ctx, func() {
+		t := time.AfterFunc(wait, cancel)
+		context.AfterFunc(stmtCtx, func() { t.Stop() })
+	})
+	return stmtCtx, func() {
+		stopGrace()
+		cancel()
 	}
 }
 

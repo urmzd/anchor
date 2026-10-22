@@ -17,7 +17,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/urmzd/anchor" alt="License"></a>
 </p>
 
-> **Beta.** anchor is pre-1.0 and under active development. Interfaces are stabilizing but may change between minor versions, and the Postgres and Redis adapters are young. Crash recovery and graceful shutdown are correct today: a cancelled worker persists in-flight outcomes and hands interrupted runs back without burning retry budget. Workflow bodies are single-goroutine in v1; distributed activities, forking and child runs, and durable timers are on the roadmap.
+> **Beta.** anchor is pre-1.0 and under active development. Interfaces are stabilizing but may change between minor versions, and the Postgres and Redis adapters are young. Crash recovery and graceful shutdown are correct today: a cancelled worker persists in-flight outcomes and hands interrupted runs back without burning retry budget. One known gap: on Redis, a stop that lands after a claim script ran can still leave that run leased until its lease lapses (see the replay design's failure modes). Workflow bodies are single-goroutine in v1; distributed activities, forking and child runs, and durable timers are on the roadmap.
 
 ## Features
 

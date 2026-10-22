@@ -171,7 +171,8 @@ func New(lgr ledger.Ledger, q queue.Queue, opts ...Option) *Worker {
 
 // Run blocks, consuming runs until ctx is done. It starts Concurrency claim
 // loops plus, unless disabled, one janitor goroutine. On cancellation it
-// stops claiming, finishes or releases every in-flight run, waits for all
+// stops claiming, finishes or releases every in-flight run (a claim that
+// lands as it stops is released at once, unexecuted), waits for all
 // goroutines, and returns ctx.Err().
 func (w *Worker) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
@@ -208,6 +209,14 @@ func (w *Worker) claimLoop(ctx context.Context) {
 			case <-time.After(claimRetryDelay):
 			}
 			continue
+		}
+		if ctx.Err() != nil {
+			// The claim landed as the worker stopped: a queue waits for a
+			// claim it already sent rather than abandon it, so the lease is
+			// ours. Hand it straight back, burning no budget, so the next
+			// worker claims the run now instead of after the lease lapses.
+			w.release(context.WithoutCancel(ctx), it, 0, false)
+			return
 		}
 		w.process(ctx, it)
 	}

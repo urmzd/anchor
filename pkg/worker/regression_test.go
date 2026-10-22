@@ -2,6 +2,7 @@ package worker_test
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -166,5 +167,102 @@ func TestRegression_GracefulShutdownReleasesCleanly(t *testing.T) {
 	}
 	if got := executions.Load(); got != 2 {
 		t.Fatalf("executions = %d, want 2 (interrupted once, completed once)", got)
+	}
+}
+
+// lateClaimQueue delays the answer to its first claim until the caller has
+// stopped: the claim takes its lease at once, but Claim returns it only
+// once ctx is done, as a backend waiting out a claim it already sent does.
+// It records how that lease is handed back.
+type lateClaimQueue struct {
+	*queue.Memory
+	t        *testing.T
+	once     sync.Once
+	claimed  chan struct{} // closed once the late claim holds its lease
+	released atomic.Int32
+}
+
+func (q *lateClaimQueue) Claim(ctx context.Context, ttl time.Duration) (queue.Item, time.Time, error) {
+	it, deadline, err := q.Memory.Claim(ctx, ttl)
+	if err != nil {
+		return it, deadline, err
+	}
+	late := false
+	q.once.Do(func() { late = true })
+	if late {
+		close(q.claimed)
+		<-ctx.Done()
+	}
+	return it, deadline, nil
+}
+
+func (q *lateClaimQueue) Release(ctx context.Context, it queue.Item, delay time.Duration, failed bool) error {
+	if ctx.Err() != nil {
+		q.t.Errorf("Release issued on canceled context")
+	}
+	if failed || delay != 0 {
+		q.t.Errorf("Release(delay=%v, failed=%v), want an immediate release that burns no budget", delay, failed)
+	}
+	q.released.Add(1)
+	return q.Memory.Release(ctx, it, delay, failed)
+}
+
+// Regression: a claim whose answer lands after the worker has stopped holds
+// a lease the stopping worker owns. The worker must hand it straight back,
+// unexecuted and burning no budget, so the run is claimable at once rather
+// than leased to nobody until the TTL lapses.
+func TestRegression_ClaimLandingAtStopIsHandedBack(t *testing.T) {
+	lgr := ledger.NewMemory()
+	q := &lateClaimQueue{Memory: queue.NewMemory(), t: t, claimed: make(chan struct{})}
+	reg := run.NewRegistry()
+	c := anchor.New(lgr, q)
+
+	var executions atomic.Int32
+	wf := anchor.ActivityIn(reg, "late-claimed", func(context.Context, anchor.Void) (string, error) {
+		executions.Add(1)
+		return "done", nil
+	})
+	h, err := anchor.Start(context.Background(), c, wf, anchor.Void{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := worker.New(lgr, q,
+		worker.WithRegistry(reg),
+		worker.WithLeaseTTL(30*time.Second), // expiry must NOT be the recovery path
+		worker.WithJanitorEvery(0),
+		worker.WithConcurrency(1),
+	)
+	done := make(chan struct{})
+	go func() { _ = w.Run(ctx); close(done) }()
+
+	select {
+	case <-q.claimed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker never claimed the run")
+	}
+	cancel() // stop while the claim's answer is still on its way
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not stop")
+	}
+
+	if got := executions.Load(); got != 0 {
+		t.Fatalf("executions = %d, want 0: a stopping worker must not run what it claims", got)
+	}
+	if got := q.released.Load(); got != 1 {
+		t.Fatalf("releases = %d, want 1: the late claim must be handed back", got)
+	}
+	claimCtx, claimCancel := context.WithTimeout(context.Background(), time.Second)
+	defer claimCancel()
+	it, _, err := q.Memory.Claim(claimCtx, time.Minute)
+	if err != nil {
+		t.Fatalf("run not claimable after the stop (leased to nobody?): %v", err)
+	}
+	if it.RunID != h.RunID() || it.Attempt != 2 || it.Failures != 0 {
+		t.Fatalf("reclaim = %+v, want {%s 2 0}", it, h.RunID())
 	}
 }
