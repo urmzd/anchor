@@ -333,6 +333,12 @@ func (l *Ledger) getRun(ctx context.Context, runID string) (run.Run, error) {
 		return run.Run{}, err
 	}
 
+	return decodeRun(env, runID, status, created)
+}
+
+// decodeRun rebuilds a run.Run from its envelope, overlaying the mapped
+// columns, which take precedence over the envelope's copies.
+func decodeRun(env []byte, runID, status string, created *time.Time) (run.Run, error) {
 	var r run.Run
 	if err := json.Unmarshal(env, &r); err != nil {
 		return run.Run{}, fmt.Errorf("decode envelope: %w", err)
@@ -354,6 +360,68 @@ func (l *Ledger) GetRun(ctx context.Context, runID string) (run.Run, error) {
 		return run.Run{}, fmt.Errorf("pgledger: get run %s: %w", runID, err)
 	}
 	return r, nil
+}
+
+// ListRuns returns up to limit runs, newest first: descending creation time,
+// then descending run ID. An empty status lists runs of every status;
+// otherwise only runs whose mapped status column equals it. It is an
+// inspection read for operators and tools, not part of ledger.Ledger: the
+// listed runs carry no Input or Output (the payloads stay in the database,
+// so a listing never pays for them); GetRun or Load reads one run in full.
+func (l *Ledger) ListRuns(ctx context.Context, status run.RunStatus, limit int) ([]run.Run, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("pgledger: list runs: limit %d must be positive", limit)
+	}
+	created := l.createdExpr()
+	cols := fmt.Sprintf("%s, %s::jsonb - 'Input' - 'Output', %s", l.qRunsID, l.qRunsEnv, l.qRunsStatus)
+	if l.qRunsCreated != "" {
+		cols += ", " + l.qRunsCreated
+	}
+	var conds []string
+	args := []any{limit}
+	if status != "" {
+		args = append(args, string(status))
+		conds = append(conds, fmt.Sprintf("%s = $%d", l.qRunsStatus, len(args)))
+	}
+	if l.qRunsScope != "" {
+		args = append(args, l.m.Runs.Scope.Value)
+		conds = append(conds, fmt.Sprintf("%s = $%d", l.qRunsScope, len(args)))
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s DESC NULLS LAST, %s DESC LIMIT $1",
+		cols, l.qRunsTable, where, created, l.qRunsID)
+
+	rows, err := l.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("pgledger: list runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []run.Run
+	for rows.Next() {
+		var id, st string
+		var env []byte
+		var createdAt *time.Time
+		dest := []any{&id, &env, &st}
+		if l.qRunsCreated != "" {
+			dest = append(dest, &createdAt)
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf("pgledger: list runs: %w", err)
+		}
+		r, err := decodeRun(env, id, st, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("pgledger: list runs: %s: %w", id, err)
+		}
+		runs = append(runs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pgledger: list runs: %w", err)
+	}
+	return runs, nil
 }
 
 // RecordsWithPrefix is the optional ledger.PrefixReader capability: the
