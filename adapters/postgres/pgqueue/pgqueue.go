@@ -345,7 +345,10 @@ WHERE t.%s IS NULL AND (t.%s IS NULL OR t.%s < now())`,
 // its context is cancelled, yet Postgres can still carry it out and
 // commit, which would lease a run to nobody. So a lease the statement took
 // comes back as an Item, even after ctx is done, for the caller to hold or
-// hand back.
+// hand back. An error once the statement is sent leaves the outcome
+// unknown, whether Postgres stayed silent past that bound or the
+// connection broke after it committed: a lease the statement took lapses
+// after ttl.
 func (q *Queue) Claim(ctx context.Context, ttl time.Duration) (queue.Item, time.Time, error) {
 	args := []any{ttl.Seconds()}
 	if q.qScope != "" {
@@ -403,9 +406,10 @@ func (q *Queue) claimOnce(ctx context.Context, args []any) (queue.Item, bool, er
 		// Silent past the bound: whether the statement took a lease is
 		// unknown, and one it took lapses after its ttl.
 		return queue.Item{}, false, fmt.Errorf("pgqueue: claim: no answer within %v of cancellation: %w", claimAnswerWait, ctx.Err())
-	case ctx.Err() != nil:
-		return queue.Item{}, false, ctx.Err()
 	default:
+		// Not ctx's doing, even if ctx is done by now: the statement runs on
+		// stmtCtx. Postgres may have committed it before the answer was lost
+		// (a broken connection), so the outcome is unknown here too.
 		return queue.Item{}, false, fmt.Errorf("pgqueue: claim: %w", err)
 	}
 }

@@ -5,7 +5,9 @@ package pgqueue_test
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -35,14 +37,17 @@ type answerGate struct {
 	heldOnce    sync.Once
 	release     chan struct{} // closed to deliver it
 	releaseOnce sync.Once
+	cut         chan struct{} // closed to break the connection instead
+	cutOnce     sync.Once
 }
 
 func newAnswerGate() *answerGate {
-	return &answerGate{held: make(chan struct{}), release: make(chan struct{})}
+	return &answerGate{held: make(chan struct{}), release: make(chan struct{}), cut: make(chan struct{})}
 }
 
 func (g *answerGate) arm()           { g.armed.Store(true) }
 func (g *answerGate) releaseAnswer() { g.releaseOnce.Do(func() { close(g.release) }) }
+func (g *answerGate) cutAnswer()     { g.cutOnce.Do(func() { close(g.cut) }) }
 
 func (g *answerGate) dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
@@ -106,7 +111,8 @@ func (c *gatedConn) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// waitRelease blocks until the gate releases or the read deadline passes.
+// waitRelease blocks until the gate releases or the read deadline passes,
+// or breaks the connection when the gate cuts the answer.
 func (c *gatedConn) waitRelease() error {
 	for {
 		c.mu.Lock()
@@ -116,6 +122,9 @@ func (c *gatedConn) waitRelease() error {
 			select {
 			case <-c.gate.release:
 				return nil
+			case <-c.gate.cut:
+				_ = c.Close()
+				return io.ErrUnexpectedEOF
 			case <-moved:
 				continue
 			}
@@ -129,6 +138,10 @@ func (c *gatedConn) waitRelease() error {
 		case <-c.gate.release:
 			timer.Stop()
 			return nil
+		case <-c.gate.cut:
+			timer.Stop()
+			_ = c.Close()
+			return io.ErrUnexpectedEOF
 		case <-timer.C:
 		case <-moved:
 			timer.Stop()
@@ -320,5 +333,67 @@ func TestWorkerStopDuringClaimLeasesNothingToNobody(t *testing.T) {
 	}
 	if it.RunID != h.RunID() || it.Attempt != 2 || it.Failures != 0 {
 		t.Fatalf("reclaim = %+v, want {%s 2 0}", it, h.RunID())
+	}
+}
+
+// Regression: once the claim statement is sent, an error is not the
+// caller's cancellation, even when ctx is done by then. The statement runs
+// on a context ctx's cancellation does not reach, so its error has another
+// cause, and Postgres may have committed the lease before it: reported as
+// context.Canceled, a lost answer read as "stopped before asking, nothing
+// taken", while the run sat leased to nobody.
+func TestClaimErrorAfterSendIsNotTheCallersCancellation(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+
+	m := pgqueue.DefaultMapping()
+	m.Table = uniqueName("dt_queue_cut")
+	q := newQueue(t, pool, m)
+	if err := q.Enqueue(ctx, "r1", 0); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	gate := newAnswerGate()
+	gq, err := pgqueue.New(gatedPool(t, gate), m, pgqueue.WithPollInterval(5*time.Millisecond))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	gate.arm()
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	res := make(chan error, 1)
+	go func() {
+		_, _, err := gq.Claim(cctx, time.Minute)
+		res <- err
+	}()
+	select {
+	case <-gate.held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the claim never answered")
+	}
+	// Postgres has committed the lease. The caller stops, then the
+	// connection breaks before the answer arrives.
+	cancel()
+	gate.cutAnswer()
+
+	select {
+	case err = <-res:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Claim did not return after its connection broke")
+	}
+	if err == nil {
+		t.Fatal("Claim succeeded, but its answer never arrived")
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Errorf("Claim error = %v: a claim sent and committed reads as one cancelled before it was asked", err)
+	}
+	var leased bool
+	if err := pool.QueryRow(ctx, fmt.Sprintf(
+		`SELECT lease_until IS NOT NULL FROM %s WHERE run_id = 'r1'`, m.Table)).Scan(&leased); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if !leased {
+		t.Error("setup: the cut claim had not taken its lease")
 	}
 }
