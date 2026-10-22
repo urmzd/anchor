@@ -49,8 +49,12 @@ type Queue interface {
 	// a backend should wait out the answer to a claim already sent, for a
 	// bounded time, rather than abandon it when ctx is done, and return the
 	// lease it took. Claim may therefore return an Item after ctx is done:
-	// the caller holds that lease like any other, and a caller that is
-	// stopping hands it back with Release(ctx, it, 0, false).
+	// the caller holds that lease like any other. A caller that is stopping
+	// hands it back unexecuted with Release on a context the stop does not
+	// cancel, such as context.WithoutCancel(ctx), with delay 0 and
+	// failed=false. ctx itself is done, and a backend may refuse a call on
+	// a done context (pgqueue and redisqueue do), which leaves the lease to
+	// lapse and the reclaim to charge the run a failure.
 	//
 	// An error from Claim, ctx's own included, does not prove that no lease
 	// was taken. Once a claim is sent, a lost answer (the store silent past
