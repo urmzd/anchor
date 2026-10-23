@@ -294,14 +294,18 @@ resume: the next call after reserve-inventory#0 executes for real, or parks the 
 
 ## Where this sits
 
-anchor is the bottom of five layers (warp, fiber, saige, playscape, anchor):
+anchor is the bottom of five layers (Humagen, fiber, saige, playscape, anchor):
 durability for everything above it. playscape, saige and fiber build on its
 ledger, queue and worker rather than keeping their own, and its Postgres
 adapter module holds the stack's shared Postgres plumbing (`pgkit`:
 advisory-locked migrations and LISTEN/NOTIFY). It is a library chosen in
 code, with no configuration file; its one binary, `anchor`, only reads a
-ledger to validate it. [The ecosystem](https://github.com/urmzd/warp/blob/main/docs/ecosystem.md) lists who owns what, the
+ledger to validate it. [The ecosystem](https://github.com/urmzd/humagen/blob/main/docs/ecosystem.md) lists who owns what, the
 remaining duplication and the stack's limitations in one place.
+
+For existing Warp deployments of [Humagen](https://github.com/urmzd/humagen),
+see the [upgrade guide](https://github.com/urmzd/humagen/blob/main/docs/upgrading-from-warp.md).
+
 
 ## License
 
