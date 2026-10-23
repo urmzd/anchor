@@ -1,22 +1,21 @@
 # Names
 
-The ecosystem uses one set of names, everywhere: in code, configuration,
-persisted data and on the wire.
+Humagen is the platform formerly named Warp. Library names are unchanged.
+Stored identifiers may retain earlier names for compatibility.
 
 | Name | Responsibility |
 |------|----------------|
-| Warp | The platform: the one process, its API, console and Slack app |
+| [Humagen](https://github.com/urmzd/humagen) | The platform: the one process, its API, console and Slack app |
 | Fiber | The library for the event bus, connectors, routing and the agent runtime |
 | Saige | The library for agent execution and evaluations |
 | Playscape | The library for governed execution environments and workspace isolation |
 | Anchor | The library for durable execution, replay and recovery |
 
-Earlier names (Collegium and Vultus for Warp, Mandatum for Fiber, Legatus for
-Playscape, Duraturo for Anchor) are retired. They survive only in changelog
-history and in the one migration step that renames an existing database's
-tables, so a deployment moves forward without a manual step.
+Earlier names (Warp, Collegium and Vultus for Humagen, Mandatum for Fiber, Legatus for
+Playscape, Duraturo for Anchor) are retired. See the [Humagen upgrade guide](https://github.com/urmzd/humagen/blob/main/docs/upgrading-from-warp.md)
+for accepted old names and identifiers kept for stored data.
 
-Identifiers that changed with the last of the rename, and what to do:
+The earlier library rename changed these identifiers:
 
 | Identifier | Was | Is | Upgrade |
 |------------|-----|----|---------|
@@ -26,4 +25,8 @@ Identifiers that changed with the last of the rename, and what to do:
 | GitHub review format | `mandatum.github.review.v1` | `warp.github.review.v1` | agents' prompts name the new one (see `examples/github-review`) |
 | GitHub `/fix` grant | `mandatum.github.mutation.v1` | `warp.github.mutation.v1` | a grant issued before the upgrade is refused; ask for a new `/fix` |
 
-Environment variables use `WARP_`, `FIBER_`, `PLAYSCAPE_` and `ANCHOR_`.
+New GitHub review instructions use `humagen.github.review.v1`;
+`warp.github.review.v1` is still accepted. The `/fix` grant domain stays
+`warp.github.mutation.v1`, so grants issued before the Humagen rename still verify.
+
+Environment variables use `HUMAGEN_`, `FIBER_`, `PLAYSCAPE_` and `ANCHOR_`.
