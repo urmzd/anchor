@@ -3,6 +3,8 @@
   <p align="center">
     Durable execution for existing Go code: wrap your functions, run a worker, done.
     <br /><br />
+    <a href="#installation">Install</a>
+    &middot;
     <a href="https://github.com/urmzd/anchor/issues">Report Bug</a>
     &middot;
     <a href="https://pkg.go.dev/github.com/urmzd/anchor">Go Docs</a>
@@ -19,18 +21,27 @@
 
 > **Beta.** anchor is pre-1.0 and under active development. Interfaces are stabilizing but may change between minor versions, and the Postgres and Redis adapters are young. Crash recovery and graceful shutdown are correct today: a cancelled worker persists in-flight outcomes and hands interrupted runs back without burning retry budget. One known gap: on Redis, a stop that lands after a claim script ran can still leave that run leased until its lease lapses (see the replay design's failure modes). Workflow bodies are single-goroutine in v1; distributed activities, forking and child runs, and durable timers are on the roadmap.
 
+## Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Examples](#examples)
+- [Usage](#usage)
+- [Development](#development)
+- [Documentation](#documentation)
+- [License](#license)
+
 ## Features
 
-- **Wrap, don't rewrite**: `Activity`, `Step`, and `Event` wrap the code you have. Outside a run every wrapped function is a plain Go call, so tests, scripts, and codebases mid-migration keep working unchanged. Adoption is monotone.
+- **Wrap, don't rewrite**: `Activity`, `Step`, and `Event` wrap the code you have. Outside a run every wrapped function is a plain Go call, so tests, scripts, and half-migrated codebases keep working unchanged.
 - **Interfaces first, no owned schema**: `pkg/ledger.Ledger` and `pkg/queue.Queue` are pure interfaces, the root module has zero third-party dependencies, and the in-memory implementations are complete single-process systems.
-- **Your tables, validated, never migrated**: the Postgres adapter maps onto tables you already own via a declarative `Mapping`. `Validate` introspects the live schema and errors with guidance; `RecommendedDDL` returns suggested DDL and never executes it (hand it to `pgkit.Apply` if you want it applied at startup).
-- **Postgres-only works**: `pgqueue` (`FOR UPDATE SKIP LOCKED`) runs the queue in the same database, and `pgqueue.NewDeltaQueue` adds streaming on an append-only delta table woken by `LISTEN/NOTIFY`. Redis (`redisqueue`: a ZSET lease queue plus a Redis Streams delta log) is a throughput upgrade, not a requirement, and is disposable: the janitor rebuilds it from the ledger.
-- **Shared Postgres plumbing**: `pgkit`, in the same module, is what the rest of the stack uses instead of hand-rolling it: `pgkit.Apply` runs schema statements once per database under an advisory lock, and `pgkit.Listener` carries a process's `LISTEN/NOTIFY` over one connection.
-- **Activities are the ABI**: record identity is `name#occurrence` (nested calls scoped under their parent's key), so code rolls forward across releases with no version, patch, or pinning APIs; checkpoints stay valid when other, differently-named calls are inserted, removed, or reordered; divergence fails loudly (`ErrNonDeterministic`); a breaking input/output change is a rename (`charge-payment.v2`).
-- **Fenced attempts, budgeted failures**: `(runID, attempt)` fences every claim, with the attempt owned by the queue and incremented at every claim across the run's whole lineage; retry budget is a separate failure counter that moves only when an execution genuinely fails, so waiting and shutdown interruptions are free. The first terminal write wins; heartbeats never touch the ledger. The happy path costs two run-level ledger writes plus one per record.
-- **Waiting is native**: an `Event` is a record that does not exist yet, so the run parks off the queue at zero cost. Resume is one record write plus one enqueue: `Client.Signal`, or a row in your own table with the janitor as backstop.
-- **Streaming deltas**: activities `Emit` progress persisted on the queue side, split by attempt and seal dividers. Checkpointed activities never re-stream; losing deltas loses observability history, never correctness.
-- **Errors that mean it**: retryable failures burn retry budget with replay-cheap retries, `NonRetryable` memoizes the failure itself and surfaces it as `*run.RecordedError` on every attempt including the first, panics are retryable, `MaxAttempts` bounds failed executions (waiting never counts, so parked runs are never poisoned), and `IdempotencyKey(ctx)` hands downstream systems the key that makes at-least-once effective-once.
+- **Your tables, validated, never migrated**: the Postgres adapter maps onto tables you already own via a declarative `Mapping`. `Validate` introspects the live schema and errors with guidance; `RecommendedDDL` suggests DDL and never executes it.
+- **Postgres-only works**: `pgqueue` (`FOR UPDATE SKIP LOCKED`) runs the queue in the same database, with streaming via `LISTEN/NOTIFY`. Redis is an optional throughput upgrade and is disposable: the janitor rebuilds it from the ledger.
+- **Activities are the ABI**: records are keyed `name#occurrence`, so code rolls forward across releases with no version or patch APIs. Divergence fails loudly (`ErrNonDeterministic`); a breaking input/output change is a rename (`charge-payment.v2`).
+- **Fenced attempts, budgeted failures**: `(runID, attempt)` fences every claim, and retry budget moves only when an execution genuinely fails, so waiting and shutdown interruptions are free. The happy path costs two run-level ledger writes plus one per record.
+- **Waiting and streaming are native**: an `Event` with no record parks the run off the queue at zero cost, and activities `Emit` progress deltas that checkpointed activities never re-stream.
+- **Errors that mean it**: retryable failures get replay-cheap retries, `NonRetryable` memoizes the failure, panics are retryable, `MaxAttempts` bounds failed executions, and `IdempotencyKey(ctx)` makes at-least-once effective-once downstream.
 
 ## Installation
 
@@ -131,7 +142,24 @@ docker compose up -d --wait   # Postgres 17 + Redis 8; the init hook applies the
 make demo                     # or: cd examples/quickstart && go run .
 ```
 
-## Bring Your Own Tables
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [`quickstart`](examples/quickstart/) | The hero, runnable: an order pipeline on Postgres + Redis that survives its own worker being killed mid-run |
+| [`chaos`](examples/chaos/) | Cross-process kill test: SIGKILL a worker binary mid-activity and prove recorded activities never re-execute |
+
+## Usage
+
+### Concepts
+
+| Concept | What it is |
+|---------|------------|
+| ledger | Durable truth: runs and their memoized records, in tables you already own (`pkg/ledger`) |
+| queue | Flow and clock: delivery of run IDs under fenced, time-bounded claims; disposable, rebuildable from the ledger (`pkg/queue`) |
+| worker | A pull loop with no inbound surface: claims, replays to the frontier, writes one outcome per claim (`pkg/worker`) |
+
+### Bring Your Own Tables
 
 `DefaultMapping` targets the suggested `anchor_runs` / `anchor_records` tables, but a mapping can point at tables you already have, including tables shared with other rows:
 
@@ -166,7 +194,7 @@ if err := lgr.Validate(ctx); err != nil {
 
 Two validation rules worth knowing up front: mapped identifiers are lower_snake_case only, and the uniqueness the ledger depends on must be a plain unique index or unique constraint (the runs table on its run-ID column, the records table on its run-ID and key pair). Partial or expression unique indexes are rejected, because the adapter's `ON CONFLICT` writes cannot use them.
 
-## Wait for a Human
+### Wait for a Human
 
 Waiting is the absence of a record. An `Event` with no record parks the run: settled off the queue, still pending, costing nothing. Anything that writes the record and enqueues the run resumes it:
 
@@ -180,7 +208,7 @@ err = c.Signal(ctx, "order-1042", "approval", Approval{By: "ada"})
 
 `Signal` is sugar for "write the event record, enqueue the run". A row inserted into your own table plus an enqueue does the same, and the janitor re-enqueues parked runs as a backstop. Parking costs nothing: a run can wait days and resume with its full retry budget intact. Call `Event` from the workflow body, not inside a nested activity: record keys are parent-scoped, and `Signal` targets top-level event keys.
 
-## Stream Progress
+### Stream Progress
 
 ```go
 // Inside an activity: emit deltas.
@@ -211,7 +239,7 @@ if err := q.Validate(ctx); err != nil {
 }
 ```
 
-## Postgres Plumbing
+### Postgres Plumbing
 
 `pgkit` holds the two pieces every Postgres-backed component needs. `Apply` runs idempotent steps in one transaction under an advisory lock named by the caller, so replicas that start together migrate one at a time:
 
@@ -238,7 +266,7 @@ for n := range notes {
 q, err := pgqueue.NewDeltaQueue(pool, qm, dm, pgqueue.WithListener(l))
 ```
 
-## Inspect a Ledger
+### Inspect a Ledger
 
 `anchor`, a command in the Postgres adapter module (`adapters/postgres/cmd/anchor`), validates a ledger from the outside: it lists runs, shows one with its records, and replays one without side effects to report where a worker would resume it. It only reads, and it checks the tables with `Validate` before it reads anything.
 
@@ -267,45 +295,24 @@ resume: the next call after reserve-inventory#0 executes for real, or parks the 
 - `-json` prints machine output. Payloads that are JSON appear as JSON under `input` and `output`; other bytes appear base64-encoded under `input_base64` and `output_base64`.
 - Exit codes: 0 ok, 1 the command failed (connection, schema, unknown run), 2 usage, 3 `replay` found a divergence a worker would fail the run on, or a record no call could have produced.
 - The URL comes from `-db` or `ANCHOR_DATABASE_URL` and is never printed, not in errors and not in `-h`. Connections open with `default_transaction_read_only` on, so the server refuses any write.
-- Tables: `-runs-table` and `-records-table` point at `DefaultMapping`-shaped tables under other names (fiber's are `fiber_runs` and `fiber_run_records`). Other column mappings are not supported by the command; in code, `pgledger.Ledger.ListRuns`, `GetRun` and `Load` read any mapping.
+- Tables: `-runs-table` and `-records-table` point at `DefaultMapping`-shaped tables under other names. Other column mappings are not supported by the command; in code, `pgledger.Ledger.ListRuns`, `GetRun` and `Load` read any mapping.
 - Build it from a checkout: the adapter module's `go.mod` keeps a `replace` for in-repo development, which `go install ...@version` refuses.
 
-## Concepts
+## Development
 
-| Concept | What it is |
-|---------|------------|
-| ledger | Durable truth: runs and their memoized records, in tables you already own (`pkg/ledger`) |
-| queue | Flow and clock: delivery of run IDs under fenced, time-bounded claims; disposable, rebuildable from the ledger (`pkg/queue`) |
-| worker | A pull loop with no inbound surface: claims, replays to the frontier, writes one outcome per claim (`pkg/worker`) |
-
-## Examples
-
-| Example | Description |
-|---------|-------------|
-| [`quickstart`](examples/quickstart/) | The hero, runnable: an order pipeline on Postgres + Redis that survives its own worker being killed mid-run |
-| [`chaos`](examples/chaos/) | Cross-process kill test: SIGKILL a worker binary mid-activity and prove recorded activities never re-execute |
+```sh
+make init               # install git hooks, download modules
+make check              # fmt, lint, test across every module
+make test-integration   # Postgres + Redis via docker compose
+make demo               # run the quickstart
+```
 
 ## Documentation
 
-- [Architecture overview](docs/architecture/overview.md): the three concepts, the package DAG, modules, adapters, capabilities
+- [Architecture overview](docs/architecture/overview.md): concepts, packages, modules, adapters, capabilities
 - [Replay design](docs/design/replay.md): the replay algorithm, the claim protocol, and the failure-mode table
 - [AGENTS.md](AGENTS.md): AI-facing conventions, commands, extension guide
 - [Contributing](CONTRIBUTING.md): development workflow and commit convention
-
-## Where this sits
-
-anchor is the bottom of five layers (Humagen, fiber, saige, playscape, anchor):
-durability for everything above it. playscape, saige and fiber build on its
-ledger, queue and worker rather than keeping their own, and its Postgres
-adapter module holds the stack's shared Postgres plumbing (`pgkit`:
-advisory-locked migrations and LISTEN/NOTIFY). It is a library chosen in
-code, with no configuration file; its one binary, `anchor`, only reads a
-ledger to validate it. [The ecosystem](https://github.com/urmzd/humagen/blob/main/docs/ecosystem.md) lists who owns what, the
-remaining duplication and the stack's limitations in one place.
-
-For existing Warp deployments of [Humagen](https://github.com/urmzd/humagen),
-see the [upgrade guide](https://github.com/urmzd/humagen/blob/main/docs/upgrading-from-warp.md).
-
 
 ## License
 
