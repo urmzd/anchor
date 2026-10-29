@@ -12,7 +12,7 @@ Stored identifiers may retain earlier names for compatibility.
 | Anchor | The library for durable execution, replay and recovery |
 
 Earlier names (Warp, Collegium and Vultus for Humagen, Mandatum for Fiber, Legatus for
-Playscape, Duraturo for Anchor) are retired. See the [Humagen upgrade guide](https://github.com/urmzd/humagen/blob/main/docs/upgrading-from-warp.md)
+Playscape, Duraturo for Anchor) are retired. See the [Humagen upgrade guide](https://github.com/urmzd/humagen/blob/main/docs/guides/upgrading-from-warp.md)
 for accepted old names and identifiers kept for stored data.
 
 The earlier library rename changed these identifiers:

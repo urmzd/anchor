@@ -68,7 +68,7 @@ type Queue interface {
 	// which gives up at the client's ReadTimeout, or with
 	// ContextTimeoutEnabled at ctx's deadline, so a stop that lands after
 	// the script ran can still leave the run leased to nobody until its ttl
-	// (a known limit; docs/design/replay.md lists it).
+	// (a known limit; docs/architecture/replay.md lists it).
 	Claim(ctx context.Context, ttl time.Duration) (Item, time.Time, error)
 
 	// Heartbeat extends the lease by ttl iff it still holds. A stale

@@ -23,7 +23,7 @@ type Stream interface {
 //
 // Framework-written dividers (run.DeltaAttempt, run.DeltaSeal) let consumers
 // split segments by attempt and discard superseded partial output; see the
-// consumer algorithm in docs/design/replay.md.
+// consumer algorithm in docs/architecture/replay.md.
 type DeltaLog interface {
 	// Append adds one delta. Appends are fenced like heartbeats: a delta
 	// carrying a superseded attempt gets run.ErrSuperseded.

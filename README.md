@@ -310,7 +310,7 @@ make demo               # run the quickstart
 ## Documentation
 
 - [Architecture overview](docs/architecture/overview.md): concepts, packages, modules, adapters, capabilities
-- [Replay design](docs/design/replay.md): the replay algorithm, the claim protocol, and the failure-mode table
+- [Replay design](docs/architecture/replay.md): the replay algorithm, the claim protocol, and the failure-mode table
 - [AGENTS.md](AGENTS.md): AI-facing conventions, commands, extension guide
 - [Contributing](CONTRIBUTING.md): development workflow and commit convention
 
