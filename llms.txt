@@ -17,7 +17,7 @@ Go module `github.com/urmzd/anchor` (a library, zero third-party dependencies at
 
 - README.md: features, installation, quick start, bring-your-own-tables, events, streaming
 - docs/architecture/overview.md: the three concepts, package DAG, module layout, the two adapters, capability pattern, roadmap
-- docs/design/replay.md: replay algorithm, claim protocol, the 14-row failure-mode table, park/resume, delta consumer algorithm, versioning rules
+- docs/architecture/replay.md: replay algorithm, claim protocol, the 14-row failure-mode table, park/resume, delta consumer algorithm, versioning rules
 - AGENTS.md: AI-facing conventions, commands, rules, extension guide
 - CONTRIBUTING.md: development workflow and commit convention
 - examples/quickstart: the README hero, runnable (kills its own worker mid-run)
