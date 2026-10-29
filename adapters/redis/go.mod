@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 )
 
