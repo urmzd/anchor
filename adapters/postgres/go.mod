@@ -1,3 +1,4 @@
+// Deprecated: moved to github.com/urmzd/orchagent/durable/adapters/postgres
 module github.com/urmzd/anchor/adapters/postgres
 
 go 1.26.4

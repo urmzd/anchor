@@ -1,3 +1,4 @@
+// Deprecated: moved to github.com/urmzd/orchagent/durable/adapters/redis
 module github.com/urmzd/anchor/adapters/redis
 
 go 1.26.4
