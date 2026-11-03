@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.2 (2026-11-03)
+
+### .
+
+### adapters/postgres
+
+#### Bug Fixes
+
+- deprecate module, moved to urmzd/orchagent (#11) ([a083654](https://github.com/urmzd/anchor/commit/a083654838c33232cf61789a2b7c5f0fbd23f482))
+- **deps**: patch vulnerable Go dependencies (#10) ([7f8b7d5](https://github.com/urmzd/anchor/commit/7f8b7d51f3c911f2329cf84e3fb87bda8c7cafd5))
+
+### adapters/redis
+
+#### Bug Fixes
+
+- deprecate module, moved to urmzd/orchagent (#11) ([a083654](https://github.com/urmzd/anchor/commit/a083654838c33232cf61789a2b7c5f0fbd23f482))
+- **deps**: patch vulnerable Go dependencies (#10) ([7f8b7d5](https://github.com/urmzd/anchor/commit/7f8b7d51f3c911f2329cf84e3fb87bda8c7cafd5))
+
+[Full Changelog](https://github.com/urmzd/anchor/compare/v0.5.1...v0.5.2)
+
+
 ## 0.5.1 (2026-10-22)
 
 ### Bug Fixes
